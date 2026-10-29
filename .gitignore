@@ -2,3 +2,6 @@
 
 # Postgres container volume mount
 .pgdata/
+
+# Generated test matrices (recreate with tests/kernel/make_abc.py)
+tests/kernel/*.bin
