@@ -1,6 +1,6 @@
 import enum
 
-class JobStatus(enum.StrEnum):
+class RunStatus(enum.StrEnum):
     QUEUED = "queued"
     RUNNING = "running"
     DONE = "done"
