@@ -5,3 +5,6 @@
 
 # Generated test matrices (recreate with tests/kernel/make_abc.py)
 tests/kernel/*.bin
+
+# Build output (rebuild with `make kernels`)
+kernels/bin/

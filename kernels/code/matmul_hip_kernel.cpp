@@ -112,7 +112,7 @@ __global__ void multiply_two_arrays_half2(__half array1[], __half array2[], __ha
 
 static void usage(const char* prog) {
     fprintf(stderr,
-            "usage: %s --kernel naive|lds|half2|rocblas --m M --n N --k K --a A.bin --b B.bin --out C.bin [--iters I]\n"
+            "usage: %s --kernel naive|lds|half2|rocblas|rocblas_half --m M --n N --k K --a A.bin --b B.bin --out C.bin [--iters I]\n"
             "  A is MxK, B is KxN, C is MxN; all files are raw row-major float32\n",
             prog);
     exit(2);
@@ -170,6 +170,17 @@ static void launch(const std::string& kernel, rocblas_handle handle, void* a, vo
         const float beta = 0.0f;
         ROCBLAS_CHECK(rocblas_sgemm(handle, rocblas_operation_none, rocblas_operation_none,
                                     N, M, K, &alpha, (float*)b, N, (float*)a, K, &beta, (float*)c, N));
+    } else if (kernel == "rocblas_half") {
+        // fp16 in and out with fp32 accumulation, the same as half2
+        const float alpha = 1.0f;
+        const float beta = 0.0f;
+        ROCBLAS_CHECK(rocblas_gemm_ex(handle, rocblas_operation_none, rocblas_operation_none,
+                                      N, M, K, &alpha,
+                                      b, rocblas_datatype_f16_r, N,
+                                      a, rocblas_datatype_f16_r, K, &beta,
+                                      c, rocblas_datatype_f16_r, N,
+                                      c, rocblas_datatype_f16_r, N,
+                                      rocblas_datatype_f32_r, rocblas_gemm_algo_standard, 0, 0));
     } else if (kernel == "naive") {
         dim3 block(16, 16);
         dim3 grid((N + 15) / 16, (M + 15) / 16);
@@ -207,10 +218,11 @@ int main(int argc, char** argv) {
         else usage(argv[0]);
     }
 
-    bool half = kernel == "half2";
-    if (kernel != "naive" && kernel != "lds" && kernel != "rocblas" && !half) usage(argv[0]);
+    bool use_rocblas = kernel == "rocblas" || kernel == "rocblas_half";
+    bool half = kernel == "half2" || kernel == "rocblas_half";
+    if (kernel != "naive" && kernel != "lds" && kernel != "half2" && !use_rocblas) usage(argv[0]);
     if (!a_path || !b_path || !out_path || M < 1 || N < 1 || K < 1 || iters < 1) usage(argv[0]);
-    if (half && (K % 2 != 0 || N % 2 != 0)) {
+    if (kernel == "half2" && (K % 2 != 0 || N % 2 != 0)) {
         fprintf(stderr, "half2 needs K and N to be even\n");
         return 1;
     }
@@ -224,7 +236,7 @@ int main(int argc, char** argv) {
     void* d_c = to_device(c, half);
 
     rocblas_handle handle = nullptr;
-    if (kernel == "rocblas") {
+    if (use_rocblas) {
         ROCBLAS_CHECK(rocblas_create_handle(&handle));
     }
 
