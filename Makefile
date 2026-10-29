@@ -20,3 +20,6 @@ down: ## Stop Postgres (data is kept)
 kernels: ## Build the HIP GEMM binary (run inside the ROCm container)
 	mkdir -p kernels/bin
 	hipcc -O3 kernels/code/matmul_hip_kernel.cpp -lrocblas -o kernels/bin/matmul
+
+run: ## Run the python app
+	uv run gemm-queue
