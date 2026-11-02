@@ -1,2 +1,3 @@
 MAX_DIM = 8192
-MAX_SEED = 2**32 - 1
+# jobs.seed is a Postgres INTEGER (signed 32-bit)
+MAX_SEED = 2**31 - 1
