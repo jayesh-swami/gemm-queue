@@ -1,7 +1,7 @@
 [project]
 name = "gemm-queue"
 version = "0.1.0"
-description = "Job queue that runs and verifies custom AMD HIP GEMM kernels on uploaded or generated matrices"
+description = "Job queue that runs and verifies custom AMD HIP GEMM kernels on generated matrices"
 readme = "README.md"
 authors = [
     { name = "Jayesh", email = "jayeshjayant99@gmail.com" }
@@ -14,10 +14,8 @@ dependencies = [
     "psycopg-binary>=3.3.6",
     "pydantic-settings>=2.16.2",
     "sqlalchemy>=2.1.6",
+    "uvicorn[standard]>=0.54.0",
 ]
-
-[project.scripts]
-gemm-queue = "gemm_queue:main"
 
 [build-system]
 requires = ["uv_build>=0.13.6,<0.14.0"]

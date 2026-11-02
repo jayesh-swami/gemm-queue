@@ -7,11 +7,15 @@ ROOT = Path(__file__).resolve().parent.parent
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=ROOT / ".env")
 
+    # PostgreSQL
     postgres_user: str
     postgres_password: str
     postgres_db: str
     postgres_host: str
     postgres_port: int
+
+    # API
+    api_key: str
 
     @property
     def database_url(self) -> URL:

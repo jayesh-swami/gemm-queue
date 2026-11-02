@@ -1,0 +1,2 @@
+MAX_DIM = 8192
+MAX_SEED = 2**32 - 1
