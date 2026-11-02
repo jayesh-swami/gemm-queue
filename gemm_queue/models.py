@@ -16,7 +16,7 @@ class Base(DeclarativeBase):
 
 class KernelJob(Base, AuditMixin):
     __tablename__ = "jobs"
-    
+
     id: Mapped[int] = mapped_column(primary_key=True)
     mat_1_src: Mapped[str] = mapped_column(String(200))
     mat_2_src: Mapped[str] = mapped_column(String(200))
