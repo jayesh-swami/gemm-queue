@@ -23,6 +23,7 @@ class KernelJob(Base, AuditMixin):
     m: Mapped[int]
     n: Mapped[int]
     k: Mapped[int]
+    seed: Mapped[int]
 
     runs: Mapped[list["KernelRunResult"]] = relationship(back_populates = "job")
 
