@@ -1,4 +1,5 @@
-from pathlib import Path                                                                             
+from pathlib import Path
+from urllib.parse import quote
 from sqlalchemy import URL
 from pydantic_settings import BaseSettings, SettingsConfigDict                                                                                                  
 
@@ -14,8 +15,20 @@ class Settings(BaseSettings):
     postgres_host: str
     postgres_port: int
 
+    # RabbitMQ
+    rabbitmq_user: str
+    rabbitmq_password: str
+    rabbitmq_host: str
+    rabbitmq_port: int
+
     # API
     api_key: str
+
+    @property
+    def rabbitmq_url(self) -> str:
+        user = quote(self.rabbitmq_user, safe="")
+        password = quote(self.rabbitmq_password, safe="")
+        return f"amqp://{user}:{password}@{self.rabbitmq_host}:{self.rabbitmq_port}/"
 
     @property
     def database_url(self) -> URL:

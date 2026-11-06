@@ -7,3 +7,30 @@ services:
     volumes:
       - ./.pgdata:/var/lib/postgresql/data:Z
 
+  mq:
+    image: rabbitmq:4-management
+    # RabbitMQ names its data directory after the node's hostname, so it must
+    # stay fixed or durable queues and messages are lost on recreate.
+    hostname: gemmq-mq
+    # Run as the image's rabbitmq user. Otherwise the healthcheck (exec'd as
+    # root) can create /var/lib/rabbitmq/.erlang.cookie as root before the
+    # broker does, and the broker then can't read its own cookie.
+    user: "999:999"
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+    ports:
+      - "127.0.0.1:5672:5672"   # AMQP
+      - "127.0.0.1:15672:15672" # management UI
+    volumes:
+      # named volume: podman gives it the image's ownership (uid 999), which a
+      # rootless bind mount of a host dir would not have
+      - mqdata:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  mqdata:

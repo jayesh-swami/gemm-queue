@@ -5,7 +5,7 @@
 COMPOSE ?= podman compose
 
 .DEFAULT_GOAL := help
-.PHONY: db down kernels
+.PHONY: help db mq down kernels run-api
 
 help: ## Show this list
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | \
@@ -14,7 +14,10 @@ help: ## Show this list
 db: ## Start Postgres, wait until healthy
 	$(COMPOSE) up -d db
 
-down: ## Stop Postgres (data is kept)
+mq: ## Start RabbitMQ (management UI on localhost:15672)
+	$(COMPOSE) up -d mq
+
+down: ## Stop all services (data is kept)
 	$(COMPOSE) down
 
 kernels: ## Build the HIP GEMM binary (run inside the ROCm container)
