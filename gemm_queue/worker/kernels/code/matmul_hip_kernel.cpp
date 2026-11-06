@@ -112,7 +112,7 @@ __global__ void multiply_two_arrays_half2(__half array1[], __half array2[], __ha
 
 static void usage(const char* prog) {
     fprintf(stderr,
-            "usage: %s --kernel naive|lds|half2|rocblas|rocblas_half --m M --n N --k K --a A.bin --b B.bin --out C.bin [--iters I]\n"
+            "usage: %s --kernel naive|lds|half2|rocblas|rocblas_half --m M --n N --k K --a A.f32 --b B.f32 --out C.f32 [--iters I]\n"
             "  A is MxK, B is KxN, C is MxN; all files are raw row-major float32\n",
             prog);
     exit(2);

@@ -6,7 +6,7 @@ __pycache__/
 .pgdata/
 
 # Generated test matrices (recreate with tests/kernel/make_abc.py)
-tests/kernel/*.bin
+tests/kernel/*.f32
 
 # Build output (rebuild with `make kernels`)
-kernels/bin/
+gemm_queue/worker/kernels/bin/

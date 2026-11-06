@@ -21,8 +21,8 @@ down: ## Stop all services (data is kept)
 	$(COMPOSE) down
 
 kernels: ## Build the HIP GEMM binary (run inside the ROCm container)
-	mkdir -p kernels/bin
-	hipcc -O3 kernels/code/matmul_hip_kernel.cpp -lrocblas -o kernels/bin/matmul
+	mkdir -p gemm_queue/worker/kernels/bin
+	hipcc -O3 gemm_queue/worker/kernels/code/matmul_hip_kernel.cpp -lrocblas -o gemm_queue/worker/kernels/bin/matmul
 
 run-api: ## Run the python api
 	uv run uvicorn gemm_queue.api.main:app --reload
