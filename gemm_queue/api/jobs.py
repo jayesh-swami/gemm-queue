@@ -6,13 +6,14 @@ from typing import Annotated
 from aio_pika.abc import AbstractChannel
 from fastapi import APIRouter, Depends
 from fastapi.concurrency import run_in_threadpool
+from sqlalchemy.orm import Session
 
 from gemm_queue import mq
 from gemm_queue.api.constants import MAX_SEED
-from gemm_queue.api.dependencies import get_mq_channel
+from gemm_queue.api.dependencies import get_db_session, get_mq_channel
 from gemm_queue.api.schema import JobCreated, JobRequest
 from gemm_queue.api.security import require_api_key
-from gemm_queue.crud import save_job
+from gemm_queue.db.repositories import KernelJobRepository
 from gemm_queue.messages import TaskMessage
 
 logger = logging.getLogger(__name__)
@@ -23,13 +24,17 @@ router = APIRouter(prefix="/jobs", tags=["jobs"])
 @router.post("", status_code=202, dependencies=[Depends(require_api_key)])
 async def create_job(
     req: JobRequest,
+    session: Annotated[Session, Depends(get_db_session)],
     channel: Annotated[AbstractChannel, Depends(get_mq_channel)],
 ) -> JobCreated:
     seed = req.seed if req.seed is not None else secrets.randbelow(MAX_SEED + 1)
 
+    # add() only stages the rows in memory; the commit is the database I/O.
+    job = KernelJobRepository(session).add(m=req.m, n=req.n, k=req.k, seed=seed)
+
     # Commit first, then publish: a worker must never receive a task whose row
     # doesn't exist yet. The DB driver is sync, so it runs off the event loop.
-    job = await run_in_threadpool(save_job, req.m, req.n, req.k, seed)
+    await run_in_threadpool(session.commit)
 
     tasks = [
         TaskMessage(

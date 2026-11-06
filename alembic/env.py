@@ -5,7 +5,7 @@ from sqlalchemy import pool
 
 from alembic import context
 
-from gemm_queue.models import Base
+from gemm_queue.db.models import Base
 from gemm_queue.config import settings
 
 # this is the Alembic Config object, which provides
