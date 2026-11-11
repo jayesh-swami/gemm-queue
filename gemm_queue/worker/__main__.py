@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 async def main() -> None:
     """Connect, then process tasks one at a time until stopped."""
-    runner = HipRunner() if settings.worker_runner == "hip" else FakeRunner()
+    runner = HipRunner(iters=settings.kernel_iters) if settings.worker_runner == "hip" else FakeRunner()
 
     async with await mq.connect() as connection:
         channel = await connection.channel()

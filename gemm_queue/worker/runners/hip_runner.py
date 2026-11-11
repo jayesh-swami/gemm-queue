@@ -18,7 +18,7 @@ TIMEOUT_S = 600
 class HipRunner(KernelRunner):
     """Runs a kernel through the compiled HIP binary (see kernels/code)."""
 
-    def __init__(self, binary: Path = DEFAULT_BINARY, iters: int = 10) -> None:
+    def __init__(self, iters: int, binary: Path = DEFAULT_BINARY) -> None:
         """Fails right away if the binary isn't built, not on the first task."""
         if not binary.is_file():
             raise FileNotFoundError(f"kernel binary not found: {binary} (run `make kernels`)")

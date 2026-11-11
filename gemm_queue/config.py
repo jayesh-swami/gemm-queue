@@ -27,6 +27,7 @@ class Settings(BaseSettings):
 
     # Worker
     worker_runner: Literal["fake", "hip"] = "fake"
+    kernel_iters: int = 5  # timed runs per task, averaged into ms
 
     @property
     def rabbitmq_url(self) -> str:
