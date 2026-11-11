@@ -3,6 +3,8 @@
 .venv
 .pgdata
 gemm_queue/frontend
+# ...except the built bundle, which the API image serves
+!gemm_queue/frontend/dist
 tests
 **/__pycache__
 gemm_queue/worker/kernels/bin

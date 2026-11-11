@@ -6,6 +6,12 @@ services:
       - "127.0.0.1:5432:5432"
     volumes:
       - ./.pgdata:/var/lib/postgresql/data:Z
+    healthcheck:
+      # $$ so compose leaves the variables for the container's shell
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   mq:
     image: rabbitmq:4-management
@@ -31,6 +37,22 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  api:
+    # built by `make api`: compose's own build step fails on the unreadable .pgdata
+    image: localhost/gemm-queue-api
+    env_file: .env
+    environment:
+      POSTGRES_HOST: db
+      RABBITMQ_HOST: mq
+    ports:
+      - "127.0.0.1:8000:8000"   # API and frontend
+    depends_on:
+      db:
+        condition: service_healthy
+      mq:
+        condition: service_healthy
+    restart: unless-stopped
 
   worker:
     # built by `make worker`: compose's own build step fails on the unreadable .pgdata

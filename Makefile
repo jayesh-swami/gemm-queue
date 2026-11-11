@@ -6,7 +6,7 @@ COMPOSE ?= podman compose
 HIPCC_FLAGS ?= -O3
 
 .DEFAULT_GOAL := help
-.PHONY: help db mq worker down kernels run-api run-worker run-frontend build-frontend
+.PHONY: help up db mq api worker down kernels run-api run-worker run-frontend build-frontend
 
 help: ## Show this list
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | \
@@ -17,6 +17,12 @@ db: ## Start Postgres, wait until healthy
 
 mq: ## Start RabbitMQ (management UI on localhost:15672)
 	$(COMPOSE) up -d mq
+
+up: api worker ## Build and start everything (app on localhost:8000)
+
+api: build-frontend ## Build and start the API container (serves the frontend)
+	podman build -f gemm_queue/api/Dockerfile -t gemm-queue-api .
+	$(COMPOSE) up -d api
 
 worker: ## Build and start the GPU worker container
 	podman build -f gemm_queue/worker/Dockerfile -t gemm-queue-worker .
