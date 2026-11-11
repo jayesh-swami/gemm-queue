@@ -6,14 +6,12 @@ The kernels are the workload. The project is mostly about the system around them
 
 ```mermaid
 flowchart LR
-    UI[React page] -->|POST /jobs| API[FastAPI]
-    API -->|job + 5 runs| DB[(Postgres)]
+    UI[React page] -->|POST /jobs<br/>polls GET /jobs/:id| API[FastAPI]
     API -->|5 tasks| T[[gemm.tasks]]
     T --> W[GPU worker<br/>HIP + rocBLAS]
     W -->|results| R[[gemm.results]]
-    R --> C[results consumer<br/>in the API]
-    C --> DB
-    UI -->|polls GET /jobs/:id| API
+    R -->|results consumer| API
+    API -->|jobs, runs, results| DB[(Postgres)]
 ```
 
 ## Design
