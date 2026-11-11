@@ -13,3 +13,5 @@ class ResultMessage(BaseModel):
     message: str
     ms: float | None = None
     tflops: float | None = None
+    max_error: float | None = None
+    passed: bool | None = None
