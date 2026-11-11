@@ -6,7 +6,7 @@ COMPOSE ?= podman compose
 HIPCC_FLAGS ?= -O3
 
 .DEFAULT_GOAL := help
-.PHONY: help up db mq api worker down kernels run-api run-worker run-frontend build-frontend test
+.PHONY: help up db mq api worker down kernels run-api run-worker run-frontend build-frontend test test-integration
 
 help: ## Show this list
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | \
@@ -49,3 +49,6 @@ build-frontend: ## Build the frontend; run-api then serves it at localhost:8000
 
 test: ## Run the unit tests
 	uv run pytest tests/unit
+
+test-integration: ## Run the integration tests (needs make db mq)
+	uv run pytest tests/integration

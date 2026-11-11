@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     rabbitmq_password: str
     rabbitmq_host: str
     rabbitmq_port: int
+    rabbitmq_vhost: str = "/"
 
     # API
     api_key: str
@@ -33,7 +34,8 @@ class Settings(BaseSettings):
     def rabbitmq_url(self) -> str:
         user = quote(self.rabbitmq_user, safe="")
         password = quote(self.rabbitmq_password, safe="")
-        return f"amqp://{user}:{password}@{self.rabbitmq_host}:{self.rabbitmq_port}/"
+        vhost = quote(self.rabbitmq_vhost, safe="")
+        return f"amqp://{user}:{password}@{self.rabbitmq_host}:{self.rabbitmq_port}/{vhost}"
 
     @property
     def database_url(self) -> URL:
