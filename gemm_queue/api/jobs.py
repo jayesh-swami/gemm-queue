@@ -4,14 +4,14 @@ import secrets
 from typing import Annotated
 
 from aio_pika.abc import AbstractChannel
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 
 from gemm_queue import mq
 from gemm_queue.api.constants import MAX_SEED
 from gemm_queue.api.dependencies import get_db_session, get_mq_channel
-from gemm_queue.api.schema import JobCreated, JobRequest
+from gemm_queue.api.schema import JobCreated, JobDetail, JobRequest
 from gemm_queue.api.security import require_api_key
 from gemm_queue.db.repositories import KernelJobRepository
 from gemm_queue.messages import TaskMessage
@@ -56,3 +56,12 @@ async def create_job(
         logger.exception("job %d saved but publishing its tasks failed", job.id)
 
     return JobCreated(job_id=job.id, seed=seed)
+
+
+@router.get("/{job_id}", dependencies=[Depends(require_api_key)])
+def get_job(job_id: int, session: Annotated[Session, Depends(get_db_session)]) -> JobDetail:
+    """One job with all its kernel runs. A plain def, so FastAPI runs it in its thread pool."""
+    job = KernelJobRepository(session).get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return JobDetail.model_validate(job)
