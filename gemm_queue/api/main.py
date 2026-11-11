@@ -1,6 +1,8 @@
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
 from gemm_queue import mq
 from gemm_queue.api import jobs
@@ -9,6 +11,8 @@ from gemm_queue.db.session import SessionLocal
 
 # Results are small DB writes, so a few can be in flight at once.
 RESULTS_PREFETCH = 10
+
+FRONTEND_DIST = Path(__file__).resolve().parents[1] / "frontend" / "dist"
 
 
 @asynccontextmanager
@@ -40,3 +44,9 @@ app.include_router(jobs.router)
 @app.get("/health")
 def health():
     return {"status": "ok :D"}
+
+
+# The built frontend (make build-frontend), served at /. Mounted last so the API
+# routes above win; skipped if it hasn't been built.
+if FRONTEND_DIST.is_dir():
+    app.mount("/", StaticFiles(directory=FRONTEND_DIST, html=True), name="frontend")

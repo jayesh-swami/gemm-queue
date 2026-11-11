@@ -6,7 +6,7 @@ COMPOSE ?= podman compose
 HIPCC_FLAGS ?= -O3
 
 .DEFAULT_GOAL := help
-.PHONY: help db mq worker down kernels run-api run-worker
+.PHONY: help db mq worker down kernels run-api run-worker run-frontend build-frontend
 
 help: ## Show this list
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | \
@@ -34,3 +34,9 @@ run-api: ## Run the python api
 
 run-worker: ## Run the worker (WORKER_RUNNER=fake|hip)
 	uv run python -m gemm_queue.worker
+
+run-frontend: ## Run the frontend dev server (proxies /jobs to run-api)
+	cd gemm_queue/frontend && npm run dev
+
+build-frontend: ## Build the frontend; run-api then serves it at localhost:8000
+	cd gemm_queue/frontend && npm run build

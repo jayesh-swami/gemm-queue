@@ -2,7 +2,7 @@
 .git
 .venv
 .pgdata
-frontend
+gemm_queue/frontend
 tests
 **/__pycache__
 gemm_queue/worker/kernels/bin
