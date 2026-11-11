@@ -32,5 +32,21 @@ services:
       timeout: 5s
       retries: 5
 
+  worker:
+    # built by `make worker`: compose's own build step fails on the unreadable .pgdata
+    image: localhost/gemm-queue-worker
+    env_file: .env
+    environment:
+      RABBITMQ_HOST: mq
+      WORKER_RUNNER: hip
+    # the GPU: kfd is the compute interface, dri holds the render node
+    devices:
+      - /dev/kfd
+      - /dev/dri
+    depends_on:
+      mq:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   mqdata:

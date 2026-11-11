@@ -1,0 +1,8 @@
+.env
+.git
+.venv
+.pgdata
+frontend
+tests
+**/__pycache__
+gemm_queue/worker/kernels/bin

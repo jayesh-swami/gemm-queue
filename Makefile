@@ -3,9 +3,10 @@
 # Recipes must be indented with tabs, not spaces.
 
 COMPOSE ?= podman compose
+HIPCC_FLAGS ?= -O3
 
 .DEFAULT_GOAL := help
-.PHONY: help db mq down kernels run-api run-worker
+.PHONY: help db mq worker down kernels run-api run-worker
 
 help: ## Show this list
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | \
@@ -17,12 +18,16 @@ db: ## Start Postgres, wait until healthy
 mq: ## Start RabbitMQ (management UI on localhost:15672)
 	$(COMPOSE) up -d mq
 
+worker: ## Build and start the GPU worker container
+	podman build -f gemm_queue/worker/Dockerfile -t gemm-queue-worker .
+	$(COMPOSE) up -d worker
+
 down: ## Stop all services (data is kept)
 	$(COMPOSE) down
 
 kernels: ## Build the HIP GEMM binary (run inside the ROCm container)
 	mkdir -p gemm_queue/worker/kernels/bin
-	hipcc -O3 gemm_queue/worker/kernels/code/matmul_hip_kernel.cpp -lrocblas -o gemm_queue/worker/kernels/bin/matmul
+	hipcc $(HIPCC_FLAGS) gemm_queue/worker/kernels/code/matmul_hip_kernel.cpp -lrocblas -o gemm_queue/worker/kernels/bin/matmul
 
 run-api: ## Run the python api
 	uv run uvicorn gemm_queue.api.main:app --reload
