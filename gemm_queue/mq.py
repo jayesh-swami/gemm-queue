@@ -9,8 +9,11 @@ from gemm_queue.messages import ResultMessage, TaskMessage
 TASKS_QUEUE = "gemm.tasks"
 RESULTS_QUEUE = "gemm.results"
 TASKS_DLQ = "gemm.tasks.dlq"
+RESULTS_DLQ = "gemm.results.dlq"
 
 MAX_TASK_REDELIVERIES = 3
+# The results consumer waits between retries, so this rides out a short DB outage.
+MAX_RESULT_REDELIVERIES = 10
 
 PUBLISH_TIMEOUT_S = 5
 
@@ -22,19 +25,26 @@ async def connect() -> AbstractRobustConnection:
 
 
 async def declare_topology(channel: AbstractChannel) -> None:
-    await channel.declare_queue(TASKS_DLQ, durable=True, arguments=QUORUM)
+    await _declare_with_dlq(channel, TASKS_QUEUE, TASKS_DLQ, MAX_TASK_REDELIVERIES)
+    await _declare_with_dlq(channel, RESULTS_QUEUE, RESULTS_DLQ, MAX_RESULT_REDELIVERIES)
+
+
+async def _declare_with_dlq(
+    channel: AbstractChannel, queue: str, dlq: str, max_redeliveries: int
+) -> None:
+    """A queue whose rejected or over-delivered messages move to `dlq` instead of being dropped."""
+    await channel.declare_queue(dlq, durable=True, arguments=QUORUM)
     await channel.declare_queue(
-        TASKS_QUEUE,
+        queue,
         durable=True,
         arguments={
             **QUORUM,
-            "x-delivery-limit": MAX_TASK_REDELIVERIES,
+            "x-delivery-limit": max_redeliveries,
             # "" is the default exchange, which routes by queue name
             "x-dead-letter-exchange": "",
-            "x-dead-letter-routing-key": TASKS_DLQ,
+            "x-dead-letter-routing-key": dlq,
         },
     )
-    await channel.declare_queue(RESULTS_QUEUE, durable=True, arguments=QUORUM)
 
 
 async def publish_task(channel: AbstractChannel, task: TaskMessage) -> None:
@@ -49,6 +59,13 @@ async def consume_tasks(
     channel: AbstractChannel, callback: Callable[[AbstractIncomingMessage], Awaitable[None]]
 ) -> None:
     queue = await channel.get_queue(TASKS_QUEUE)
+    await queue.consume(callback)
+
+
+async def consume_results(
+    channel: AbstractChannel, callback: Callable[[AbstractIncomingMessage], Awaitable[None]]
+) -> None:
+    queue = await channel.get_queue(RESULTS_QUEUE)
     await queue.consume(callback)
 
 

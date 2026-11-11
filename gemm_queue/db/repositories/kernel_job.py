@@ -24,3 +24,7 @@ class KernelJobRepository:
 
     def get(self, job_id: int) -> KernelJob | None:
         return self.session.get(KernelJob, job_id)
+
+    def get_for_update(self, job_id: int) -> KernelJob | None:
+        """Like get, but locks the job row until commit (SELECT ... FOR UPDATE)."""
+        return self.session.get(KernelJob, job_id, with_for_update=True)
