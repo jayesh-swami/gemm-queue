@@ -5,13 +5,27 @@ A small job system for running GPU matrix-multiplication kernels. You submit M, 
 The kernels are the workload. The project is mostly about the system around them: queueing, retries, dead-letter handling, and making sure results are never silently lost.
 
 ```mermaid
-flowchart LR
-    UI[React page] -->|POST /jobs<br/>polls GET /jobs/:id| API[FastAPI]
-    API -->|5 tasks| T[[gemm.tasks]]
-    T --> W[GPU worker<br/>HIP + rocBLAS]
-    W -->|results| R[[gemm.results]]
-    R -->|results consumer| API
-    API -->|jobs, runs, results| DB[(Postgres)]
+sequenceDiagram
+    autonumber
+    participant B as Browser
+    participant A as API (FastAPI)
+    participant DB as Postgres
+    participant Q as RabbitMQ
+    participant W as GPU worker
+    B->>A: POST /jobs (M, N, K)
+    A->>DB: save job + 5 runs
+    A->>Q: 5 tasks on gemm.tasks
+    A-->>B: 202, job id
+    loop for each kernel
+        Q->>W: task
+        W->>W: run kernel, check against NumPy
+        W->>Q: result on gemm.results
+        W->>Q: ack task
+        Q->>A: result (results consumer)
+        A->>DB: save run
+    end
+    B->>A: poll GET /jobs/:id
+    A-->>B: runs with timings
 ```
 
 ## Design
