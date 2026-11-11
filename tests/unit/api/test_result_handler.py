@@ -11,10 +11,19 @@ def result_for(job, kernel: Kernel, success: bool = True) -> ResultMessage:
     run = next(r for r in job.runs if r.kernel == kernel)
     if success:
         return ResultMessage(
-            task_id=run.id, job_id=job.id, kernel=kernel, success=True, message="",
-            ms=1.0, tflops=2.0, max_error=1e-7, passed=True,
+            task_id=run.id,
+            job_id=job.id,
+            kernel=kernel,
+            success=True,
+            message="",
+            ms=1.0,
+            tflops=2.0,
+            max_error=1e-7,
+            passed=True,
         )
-    return ResultMessage(task_id=run.id, job_id=job.id, kernel=kernel, success=False, message="boom")
+    return ResultMessage(
+        task_id=run.id, job_id=job.id, kernel=kernel, success=False, message="boom"
+    )
 
 
 def load(session_factory, job_id):

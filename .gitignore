@@ -10,3 +10,4 @@ tests/kernel/*.f32
 
 # Build output (rebuild with `make kernels`)
 gemm_queue/worker/kernels/bin/
+.idea/

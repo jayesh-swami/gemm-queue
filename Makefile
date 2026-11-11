@@ -6,7 +6,7 @@ COMPOSE ?= podman compose
 HIPCC_FLAGS ?= -O3
 
 .DEFAULT_GOAL := help
-.PHONY: help up db mq api worker down kernels run-api run-worker run-frontend build-frontend test test-integration
+.PHONY: help up db mq api worker down kernels run-api run-worker run-frontend build-frontend test test-integration lint
 
 help: ## Show this list
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | \
@@ -52,3 +52,6 @@ test: ## Run the unit tests
 
 test-integration: ## Run the integration tests (needs make db mq)
 	uv run pytest tests/integration
+
+lint: ## Run all pre-commit hooks on every file
+	uv run pre-commit run --all-files

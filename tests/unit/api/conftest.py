@@ -17,13 +17,13 @@ os.environ.update(
     }
 )
 
-import pytest  # noqa: E402
-from sqlalchemy import create_engine  # noqa: E402
-from sqlalchemy.orm import sessionmaker  # noqa: E402
-from sqlalchemy.pool import StaticPool  # noqa: E402
+import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
-from gemm_queue.db.models import Base  # noqa: E402
-from gemm_queue.db.repositories import KernelJobRepository  # noqa: E402
+from gemm_queue.db.models import Base
+from gemm_queue.db.repositories import KernelJobRepository
 
 API_KEY = "test-key"
 

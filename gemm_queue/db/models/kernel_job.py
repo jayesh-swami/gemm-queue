@@ -23,6 +23,4 @@ class KernelJob(Base, AuditMixin):
 
     # One-way on purpose: a run refers to its job only by job_id, so the two
     # model modules don't import each other.
-    runs: Mapped[list[KernelRunResult]] = relationship(
-        lazy="selectin", order_by=KernelRunResult.id
-    )
+    runs: Mapped[list[KernelRunResult]] = relationship(lazy="selectin", order_by=KernelRunResult.id)

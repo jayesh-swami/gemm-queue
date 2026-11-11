@@ -34,12 +34,13 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title = "gemm-queue",
-    summary = "API to manage the matrix multiplication kernel jobs.",
+    title="gemm-queue",
+    summary="API to manage the matrix multiplication kernel jobs.",
     lifespan=lifespan,
 )
 
 app.include_router(jobs.router)
+
 
 @app.get("/health")
 def health():

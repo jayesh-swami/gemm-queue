@@ -67,6 +67,8 @@ class HipRunner(KernelRunner):
         self, kernel: Kernel, m: int, n: int, k: int, a_path: Path, b_path: Path, out_path: Path
     ) -> list[str]:
         """The binary's command line, as a list (no shell involved)."""
+        # Each flag stays next to its value; the formatter would put them on separate lines.
+        # fmt: off
         return [
             str(self._binary),
             "--kernel", kernel.value,
@@ -74,3 +76,4 @@ class HipRunner(KernelRunner):
             "--a", str(a_path), "--b", str(b_path), "--out", str(out_path),
             "--iters", str(self._iters),
         ]
+        # fmt: on

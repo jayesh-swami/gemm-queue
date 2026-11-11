@@ -15,7 +15,11 @@ def test_task_round_trips_through_json():
 
 def test_failed_result_round_trips_with_empty_numbers():
     result = ResultMessage(
-        task_id=1, job_id=2, kernel=Kernel.HALF2, success=False, message="half2 needs K and N to be even"
+        task_id=1,
+        job_id=2,
+        kernel=Kernel.HALF2,
+        success=False,
+        message="half2 needs K and N to be even",
     )
     parsed = ResultMessage.model_validate_json(result.model_dump_json())
     assert parsed == result

@@ -28,8 +28,15 @@ def test_parallel_results_finish_every_job():
 
     results = [
         ResultMessage(
-            task_id=run.id, job_id=job.id, kernel=run.kernel, success=True, message="",
-            ms=1.0, tflops=1.0, max_error=0.0, passed=True,
+            task_id=run.id,
+            job_id=job.id,
+            kernel=run.kernel,
+            success=True,
+            message="",
+            ms=1.0,
+            tflops=1.0,
+            max_error=0.0,
+            passed=True,
         )
         for job in jobs
         for run in job.runs

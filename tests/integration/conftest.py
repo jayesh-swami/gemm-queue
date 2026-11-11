@@ -22,27 +22,27 @@ os.environ.update(
     }
 )
 
-import asyncio  # noqa: E402
-import base64  # noqa: E402
-import json  # noqa: E402
-import subprocess  # noqa: E402
-import sys  # noqa: E402
-import threading  # noqa: E402
-import urllib.error  # noqa: E402
-import urllib.request  # noqa: E402
-from urllib.parse import quote  # noqa: E402
+import asyncio
+import base64
+import json
+import subprocess
+import sys
+import threading
+import urllib.error
+import urllib.request
+from urllib.parse import quote
 
-import psycopg  # noqa: E402
-import pytest  # noqa: E402
-from alembic import command  # noqa: E402
-from alembic.config import Config  # noqa: E402
-from fastapi.testclient import TestClient  # noqa: E402
-from helpers import purge, wait_until  # noqa: E402
-from sqlalchemy import text  # noqa: E402
+import psycopg
+import pytest
+from alembic import command
+from alembic.config import Config
+from fastapi.testclient import TestClient
+from helpers import purge, wait_until
+from sqlalchemy import text
 
-from gemm_queue import mq  # noqa: E402
-from gemm_queue.config import ROOT, settings  # noqa: E402
-from gemm_queue.db.session import dbEngine  # noqa: E402
+from gemm_queue import mq
+from gemm_queue.config import ROOT, settings
+from gemm_queue.db.session import dbEngine
 
 QUEUES = (mq.TASKS_QUEUE, mq.TASKS_DLQ, mq.RESULTS_QUEUE, mq.RESULTS_DLQ)
 

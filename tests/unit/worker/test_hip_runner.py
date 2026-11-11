@@ -8,8 +8,7 @@ import pytest
 
 from gemm_queue.enums import Kernel
 from gemm_queue.worker.inputs import make_inputs
-from gemm_queue.worker.runners import HipRunner
-from gemm_queue.worker.runners import hip_runner
+from gemm_queue.worker.runners import HipRunner, hip_runner
 
 # Mimics the real binary's CLI. STUB_MODE picks the behaviour.
 STUB = f"""#!{sys.executable}

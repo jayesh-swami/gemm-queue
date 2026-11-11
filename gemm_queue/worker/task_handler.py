@@ -51,7 +51,15 @@ class TaskHandler:
             await message.ack()
             logger.info(
                 "task %d: %s %dx%dx%d success=%s ms=%s max_error=%s passed=%s",
-                task.task_id, task.kernel, task.m, task.n, task.k, out.success, out.ms, error, passed,
+                task.task_id,
+                task.kernel,
+                task.m,
+                task.n,
+                task.k,
+                out.success,
+                out.ms,
+                error,
+                passed,
             )
         except Exception:
             logger.exception("task %s failed, sending it back to the queue", message.message_id)

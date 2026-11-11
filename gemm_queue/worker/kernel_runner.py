@@ -13,5 +13,4 @@ class KernelRunner(ABC):
     """
 
     @abstractmethod
-    async def run(self, kernel: Kernel, a: np.ndarray, b: np.ndarray) -> KernelOutputDto:
-        ...
+    async def run(self, kernel: Kernel, a: np.ndarray, b: np.ndarray) -> KernelOutputDto: ...

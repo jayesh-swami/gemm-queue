@@ -1,10 +1,12 @@
 import enum
 
+
 class RunStatus(enum.StrEnum):
     QUEUED = "queued"
     RUNNING = "running"
     DONE = "done"
     FAILED = "failed"
+
 
 class Kernel(enum.StrEnum):
     NAIVE = "naive"

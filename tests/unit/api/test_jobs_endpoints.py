@@ -76,7 +76,7 @@ def test_create_publishes_one_persistent_task_per_kernel(client, exchange):
     assert [queue for queue, _ in exchange.published] == [mq.TASKS_QUEUE] * len(Kernel)
     tasks = [TaskMessage.model_validate_json(msg.body) for _, msg in exchange.published]
     assert {t.kernel for t in tasks} == set(Kernel)
-    for task, (_, msg) in zip(tasks, exchange.published):
+    for task, (_, msg) in zip(tasks, exchange.published, strict=True):
         assert (task.job_id, task.m, task.n, task.k, task.seed) == (job["job_id"], 64, 32, 16, 7)
         assert msg.message_id == str(task.task_id)
         assert msg.delivery_mode == aio_pika.DeliveryMode.PERSISTENT

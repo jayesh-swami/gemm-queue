@@ -40,7 +40,9 @@ class ResultHandler:
             await asyncio.to_thread(self._save, result)
             await message.ack()
         except Exception:
-            logger.exception("saving result %s failed, retrying in %ds", message.message_id, RETRY_DELAY_S)
+            logger.exception(
+                "saving result %s failed, retrying in %ds", message.message_id, RETRY_DELAY_S
+            )
             await asyncio.sleep(RETRY_DELAY_S)
             await message.reject(requeue=True)
 
@@ -55,7 +57,9 @@ class ResultHandler:
             job = KernelJobRepository(session).get_for_update(result.job_id)
             run = next((r for r in job.runs if r.id == result.task_id), None) if job else None
             if run is None:
-                logger.warning("no run %d in job %d, dropping result", result.task_id, result.job_id)
+                logger.warning(
+                    "no run %d in job %d, dropping result", result.task_id, result.job_id
+                )
                 return
 
             run.status = RunStatus.DONE if result.success else RunStatus.FAILED
@@ -73,4 +77,6 @@ class ResultHandler:
                 job.status = RunStatus.RUNNING
 
             session.commit()
-            logger.info("saved run %d (%s) of job %d -> job %s", run.id, run.kernel, job.id, job.status)
+            logger.info(
+                "saved run %d (%s) of job %d -> job %s", run.id, run.kernel, job.id, job.status
+            )

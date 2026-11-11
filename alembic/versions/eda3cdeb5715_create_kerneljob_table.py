@@ -1,7 +1,7 @@
 """Create KernelJob table
 
 Revision ID: eda3cdeb5715
-Revises: 
+Revises:
 Create Date: 2026-11-02 16:35:39.032876
 
 """

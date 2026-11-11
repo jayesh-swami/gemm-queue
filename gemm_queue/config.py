@@ -1,10 +1,12 @@
 from pathlib import Path
 from typing import Literal
 from urllib.parse import quote
-from sqlalchemy import URL
-from pydantic_settings import BaseSettings, SettingsConfigDict                                                                                                  
 
-ROOT = Path(__file__).resolve().parent.parent                                                     
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy import URL
+
+ROOT = Path(__file__).resolve().parent.parent
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=ROOT / ".env")
@@ -47,6 +49,6 @@ class Settings(BaseSettings):
             port=self.postgres_port,
             database=self.postgres_db,
         )
-    
+
 
 settings = Settings()
