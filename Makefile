@@ -6,6 +6,8 @@
 # ./.pgdata and the project name (gemm-queue: volumes, container names) resolve as before.
 COMPOSE ?= podman compose -f deploy/docker-compose.yml --project-directory .
 HIPCC_FLAGS ?= -O3
+# AMD GPU the worker image compiles the kernels for (rocminfo | grep gfx)
+GPU_ARCH ?= gfx1151
 
 .DEFAULT_GOAL := help
 .PHONY: help up db mq api worker down migrate kernels run-api run-worker run-frontend build-frontend test test-integration lint
@@ -15,10 +17,10 @@ help: ## Show this list
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
 
 db: ## Start Postgres, wait until healthy
-	$(COMPOSE) up -d db
+	$(COMPOSE) up -d --wait db
 
 mq: ## Start RabbitMQ (management UI on localhost:15672)
-	$(COMPOSE) up -d mq
+	$(COMPOSE) up -d --wait mq
 
 up: api worker ## Build and start everything (app on localhost:8000)
 
@@ -27,7 +29,7 @@ api: build-frontend ## Build and start the API container (serves the frontend)
 	$(COMPOSE) up -d api
 
 worker: ## Build and start the GPU worker container
-	podman build -f deploy/worker.Dockerfile -t gemm-queue-worker .
+	podman build -f deploy/worker.Dockerfile --build-arg GPU_ARCH=$(GPU_ARCH) -t gemm-queue-worker .
 	$(COMPOSE) up -d worker
 
 down: ## Stop all services (data is kept)
@@ -50,7 +52,7 @@ run-frontend: ## Run the frontend dev server (proxies /jobs to run-api)
 	cd gemm_queue/frontend && npm run dev
 
 build-frontend: ## Build the frontend; run-api then serves it at localhost:8000
-	cd gemm_queue/frontend && npm run build
+	cd gemm_queue/frontend && ([ -d node_modules ] || npm ci) && npm run build
 
 test: ## Run the unit tests
 	uv run pytest tests/unit
