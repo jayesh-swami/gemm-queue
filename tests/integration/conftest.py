@@ -40,15 +40,16 @@ from fastapi.testclient import TestClient
 from helpers import purge, wait_until
 from sqlalchemy import text
 
-from gemm_queue import mq
-from gemm_queue.config import ROOT, settings
-from gemm_queue.db.session import dbEngine
+from gemm_queue.api.db.session import dbEngine
+from gemm_queue.api.settings import settings
+from gemm_queue.common import mq
+from gemm_queue.common.settings import ROOT
 
 QUEUES = (mq.TASKS_QUEUE, mq.TASKS_DLQ, mq.RESULTS_QUEUE, mq.RESULTS_DLQ)
 
 
 def alembic_config() -> Config:
-    return Config(ROOT / "alembic.ini")
+    return Config(ROOT / "gemm_queue/api/alembic.ini")
 
 
 def rabbit_api(method: str, path: str, body: dict | None = None) -> None:

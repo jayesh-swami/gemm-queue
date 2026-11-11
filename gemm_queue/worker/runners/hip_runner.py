@@ -5,7 +5,7 @@ from pathlib import Path
 
 import numpy as np
 
-from gemm_queue.enums import Kernel
+from gemm_queue.common.enums import Kernel
 from gemm_queue.worker.kernel_output_dto import KernelOutputDto
 from gemm_queue.worker.kernel_runner import KernelRunner
 

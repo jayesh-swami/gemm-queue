@@ -2,11 +2,13 @@
 # Run `make` to see all targets. Add new ones as the project needs them.
 # Recipes must be indented with tabs, not spaces.
 
-COMPOSE ?= podman compose
+# The compose file lives in deploy/; the repo root stays the project directory, so .env,
+# ./.pgdata and the project name (gemm-queue: volumes, container names) resolve as before.
+COMPOSE ?= podman compose -f deploy/docker-compose.yml --project-directory .
 HIPCC_FLAGS ?= -O3
 
 .DEFAULT_GOAL := help
-.PHONY: help up db mq api worker down kernels run-api run-worker run-frontend build-frontend test test-integration lint
+.PHONY: help up db mq api worker down migrate kernels run-api run-worker run-frontend build-frontend test test-integration lint
 
 help: ## Show this list
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | \
@@ -21,15 +23,18 @@ mq: ## Start RabbitMQ (management UI on localhost:15672)
 up: api worker ## Build and start everything (app on localhost:8000)
 
 api: build-frontend ## Build and start the API container (serves the frontend)
-	podman build -f gemm_queue/api/Dockerfile -t gemm-queue-api .
+	podman build -f deploy/api.Dockerfile -t gemm-queue-api .
 	$(COMPOSE) up -d api
 
 worker: ## Build and start the GPU worker container
-	podman build -f gemm_queue/worker/Dockerfile -t gemm-queue-worker .
+	podman build -f deploy/worker.Dockerfile -t gemm-queue-worker .
 	$(COMPOSE) up -d worker
 
 down: ## Stop all services (data is kept)
 	$(COMPOSE) down
+
+migrate: ## Apply DB migrations (the API container also does this on start)
+	uv run alembic -c gemm_queue/api/alembic.ini upgrade head
 
 kernels: ## Build the HIP GEMM binary (run inside the ROCm container)
 	mkdir -p gemm_queue/worker/kernels/bin

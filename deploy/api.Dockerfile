@@ -10,14 +10,12 @@ WORKDIR /app
 
 # Dependencies first, so code changes don't re-download them.
 COPY pyproject.toml uv.lock .python-version README.md ./
-RUN uv sync --locked --no-dev --no-install-project
+RUN uv sync --locked --no-default-groups --group api --no-install-project
 
-COPY alembic.ini ./
-COPY alembic alembic
 COPY gemm_queue gemm_queue
-RUN uv sync --locked --no-dev
+RUN uv sync --locked --no-default-groups --group api
 
 EXPOSE 8000
 # Bring the schema up to date, then serve. 0.0.0.0 is inside the container only;
 # compose publishes the port on 127.0.0.1.
-CMD ["sh", "-c", "uv run --no-sync alembic upgrade head && exec uv run --no-sync uvicorn gemm_queue.api.main:app --host 0.0.0.0 --port 8000"]
+CMD ["sh", "-c", "uv run --no-sync alembic -c gemm_queue/api/alembic.ini upgrade head && exec uv run --no-sync uvicorn gemm_queue.api.main:app --host 0.0.0.0 --port 8000"]

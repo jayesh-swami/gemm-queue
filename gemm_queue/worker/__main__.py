@@ -1,9 +1,9 @@
 import asyncio
 import logging
 
-from gemm_queue import mq
-from gemm_queue.config import settings
+from gemm_queue.common import mq
 from gemm_queue.worker.runners import FakeRunner, HipRunner
+from gemm_queue.worker.settings import settings
 from gemm_queue.worker.task_handler import TaskHandler
 
 logger = logging.getLogger(__name__)
@@ -15,7 +15,7 @@ async def main() -> None:
         HipRunner(iters=settings.kernel_iters) if settings.worker_runner == "hip" else FakeRunner()
     )
 
-    async with await mq.connect() as connection:
+    async with await mq.connect(settings.rabbitmq_url) as connection:
         channel = await connection.channel()
         await channel.set_qos(prefetch_count=1)
         await mq.declare_topology(channel)

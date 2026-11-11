@@ -6,7 +6,7 @@ import tempfile
 import numpy as np
 import pytest
 
-from gemm_queue.enums import Kernel
+from gemm_queue.common.enums import Kernel
 from gemm_queue.worker.inputs import make_inputs
 from gemm_queue.worker.runners import HipRunner, hip_runner
 

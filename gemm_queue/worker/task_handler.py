@@ -3,8 +3,8 @@ import logging
 
 from aio_pika.abc import AbstractChannel, AbstractIncomingMessage
 
-from gemm_queue import mq
-from gemm_queue.messages import ResultMessage, TaskMessage
+from gemm_queue.common import mq
+from gemm_queue.common.messages import ResultMessage, TaskMessage
 from gemm_queue.worker.inputs import make_inputs
 from gemm_queue.worker.kernel_runner import KernelRunner
 from gemm_queue.worker.verify import TOLERANCE, max_error

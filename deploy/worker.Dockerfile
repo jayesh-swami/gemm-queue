@@ -1,5 +1,5 @@
 # GPU worker: ROCm runtime + rocBLAS, the compiled HIP binary, and the Python worker.
-# Build from the repo root: docker-compose.yml sets context: .
+# Build from the repo root (`make worker`).
 FROM docker.io/rocm/dev-ubuntu-24.04:7.2.1
 
 # GPU the kernels are compiled for (gfx1151 = Radeon 8060S). No GPU is visible
@@ -17,13 +17,13 @@ WORKDIR /app
 
 # Dependencies first, so code changes don't re-download them.
 COPY pyproject.toml uv.lock .python-version README.md ./
-RUN uv sync --locked --no-dev --no-install-project
+RUN uv sync --locked --no-default-groups --group worker --no-install-project
 
 COPY Makefile ./
 COPY gemm_queue/worker/kernels/code gemm_queue/worker/kernels/code
 RUN make kernels HIPCC_FLAGS="-O3 --offload-arch=${GPU_ARCH}"
 
 COPY gemm_queue gemm_queue
-RUN uv sync --locked --no-dev
+RUN uv sync --locked --no-default-groups --group worker
 
 CMD ["uv", "run", "--no-sync", "python", "-m", "gemm_queue.worker"]

@@ -1,8 +1,8 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from gemm_queue.db.models import KernelJob, KernelRunResult
-from gemm_queue.enums import Kernel
+from gemm_queue.api.db.models import KernelJob, KernelRunResult
+from gemm_queue.common.enums import Kernel
 
 
 class KernelJobRepository:

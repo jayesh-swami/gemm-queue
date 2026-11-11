@@ -2,7 +2,7 @@ import asyncio
 
 from helpers import get_one, publish_raw, wait_until
 
-from gemm_queue import mq
+from gemm_queue.common import mq
 
 
 def test_malformed_result_is_dead_lettered_right_away():

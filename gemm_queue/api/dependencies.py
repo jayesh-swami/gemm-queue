@@ -4,7 +4,7 @@ from aio_pika.abc import AbstractChannel
 from fastapi import Request
 from sqlalchemy.orm import Session
 
-from gemm_queue.db.session import SessionLocal
+from gemm_queue.api.db.session import SessionLocal
 
 
 def get_mq_channel(request: Request) -> AbstractChannel:

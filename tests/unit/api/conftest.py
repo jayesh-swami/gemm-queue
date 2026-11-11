@@ -22,8 +22,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from gemm_queue.db.models import Base
-from gemm_queue.db.repositories import KernelJobRepository
+from gemm_queue.api.db.models import Base
+from gemm_queue.api.db.repositories import KernelJobRepository
 
 API_KEY = "test-key"
 

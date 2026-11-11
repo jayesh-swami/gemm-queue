@@ -3,8 +3,7 @@ from collections.abc import Awaitable, Callable
 import aio_pika
 from aio_pika.abc import AbstractChannel, AbstractIncomingMessage, AbstractRobustConnection
 
-from gemm_queue.config import settings
-from gemm_queue.messages import ResultMessage, TaskMessage
+from gemm_queue.common.messages import ResultMessage, TaskMessage
 
 TASKS_QUEUE = "gemm.tasks"
 RESULTS_QUEUE = "gemm.results"
@@ -20,8 +19,8 @@ PUBLISH_TIMEOUT_S = 5
 QUORUM = {"x-queue-type": "quorum"}
 
 
-async def connect() -> AbstractRobustConnection:
-    return await aio_pika.connect_robust(settings.rabbitmq_url)
+async def connect(url: str) -> AbstractRobustConnection:
+    return await aio_pika.connect_robust(url)
 
 
 async def declare_topology(channel: AbstractChannel) -> None:

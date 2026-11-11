@@ -3,9 +3,9 @@ from datetime import datetime
 from sqlalchemy import DateTime, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from gemm_queue.db.models.base import AuditMixin, Base
-from gemm_queue.db.models.kernel_run_result import KernelRunResult
-from gemm_queue.enums import RunStatus
+from gemm_queue.api.db.models.base import AuditMixin, Base
+from gemm_queue.api.db.models.kernel_run_result import KernelRunResult
+from gemm_queue.common.enums import RunStatus
 
 
 class KernelJob(Base, AuditMixin):

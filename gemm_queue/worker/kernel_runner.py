@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 
 import numpy as np
 
-from gemm_queue.enums import Kernel
+from gemm_queue.common.enums import Kernel
 from gemm_queue.worker.kernel_output_dto import KernelOutputDto
 
 

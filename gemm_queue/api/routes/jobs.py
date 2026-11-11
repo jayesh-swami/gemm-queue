@@ -8,13 +8,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 
-from gemm_queue import mq
 from gemm_queue.api.constants import MAX_SEED
+from gemm_queue.api.db.repositories import KernelJobRepository
 from gemm_queue.api.dependencies import get_db_session, get_mq_channel
 from gemm_queue.api.schema import JobCreated, JobDetail, JobRequest
 from gemm_queue.api.security import require_api_key
-from gemm_queue.db.repositories import KernelJobRepository
-from gemm_queue.messages import TaskMessage
+from gemm_queue.common import mq
+from gemm_queue.common.messages import TaskMessage
 
 logger = logging.getLogger(__name__)
 

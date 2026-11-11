@@ -139,19 +139,21 @@ wheels = [
 name = "gemm-queue"
 version = "0.1.0"
 source = { editable = "." }
+default-groups = ["api", "dev", "worker"]
 dependencies = [
     { name = "aio-pika" },
-    { name = "alembic" },
-    { name = "fastapi" },
-    { name = "numpy" },
-    { name = "psycopg" },
-    { name = "psycopg-binary" },
     { name = "pydantic-settings" },
-    { name = "sqlalchemy" },
-    { name = "uvicorn", extra = ["standard"] },
 ]
 
 [package.dev-dependencies]
+api = [
+    { name = "alembic" },
+    { name = "fastapi" },
+    { name = "psycopg" },
+    { name = "psycopg-binary" },
+    { name = "sqlalchemy" },
+    { name = "uvicorn", extra = ["standard"] },
+]
 dev = [
     { name = "httpx2" },
     { name = "pre-commit" },
@@ -159,21 +161,25 @@ dev = [
     { name = "pytest-asyncio" },
     { name = "ruff" },
 ]
+worker = [
+    { name = "numpy" },
+]
 
 [package.metadata]
 requires-dist = [
     { name = "aio-pika", specifier = ">=10.2.2" },
-    { name = "alembic", specifier = ">=1.20.1" },
-    { name = "fastapi", specifier = ">=0.162.0" },
-    { name = "numpy", specifier = ">=2.5.4" },
-    { name = "psycopg", specifier = ">=3.3.6" },
-    { name = "psycopg-binary", specifier = ">=3.3.6" },
     { name = "pydantic-settings", specifier = ">=2.16.2" },
-    { name = "sqlalchemy", specifier = ">=2.1.6" },
-    { name = "uvicorn", extras = ["standard"], specifier = ">=0.54.0" },
 ]
 
 [package.metadata.requires-dev]
+api = [
+    { name = "alembic", specifier = ">=1.20.1" },
+    { name = "fastapi", specifier = ">=0.162.0" },
+    { name = "psycopg", specifier = ">=3.3.6" },
+    { name = "psycopg-binary", specifier = ">=3.3.6" },
+    { name = "sqlalchemy", specifier = ">=2.1.6" },
+    { name = "uvicorn", extras = ["standard"], specifier = ">=0.54.0" },
+]
 dev = [
     { name = "httpx2", specifier = ">=2.16.0" },
     { name = "pre-commit", specifier = ">=4.7.0" },
@@ -181,6 +187,7 @@ dev = [
     { name = "pytest-asyncio", specifier = ">=1.4.1.post1" },
     { name = "ruff", specifier = ">=0.17.4" },
 ]
+worker = [{ name = "numpy", specifier = ">=2.5.4" }]
 
 [[package]]
 name = "h11"

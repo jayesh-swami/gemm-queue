@@ -4,7 +4,7 @@ from typing import Annotated
 from pydantic import BaseModel, ConfigDict, Field
 
 from gemm_queue.api.constants import MAX_DIM, MAX_SEED
-from gemm_queue.enums import Kernel, RunStatus
+from gemm_queue.common.enums import Kernel, RunStatus
 
 Dim = Annotated[int, Field(ge=1, le=MAX_DIM, description="Matrix dimension")]
 Seed = Annotated[int, Field(ge=0, le=MAX_SEED)]

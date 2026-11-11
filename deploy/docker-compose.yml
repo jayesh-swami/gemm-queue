@@ -1,3 +1,6 @@
+# Run through the Makefile (make up / db / mq / down), which sets the project directory.
+name: gemm-queue
+
 services:
   db:
     image: postgres:16

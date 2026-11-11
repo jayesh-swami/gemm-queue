@@ -9,11 +9,11 @@ import pytest
 from conftest import API_KEY
 from fastapi.testclient import TestClient
 
-from gemm_queue import mq
 from gemm_queue.api.dependencies import get_db_session, get_mq_channel
 from gemm_queue.api.main import app
-from gemm_queue.enums import Kernel
-from gemm_queue.messages import TaskMessage
+from gemm_queue.common import mq
+from gemm_queue.common.enums import Kernel
+from gemm_queue.common.messages import TaskMessage
 
 
 class FakeExchange:

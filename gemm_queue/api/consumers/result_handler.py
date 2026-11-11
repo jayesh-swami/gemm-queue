@@ -6,9 +6,9 @@ from aio_pika.abc import AbstractIncomingMessage
 from pydantic import ValidationError
 from sqlalchemy.orm import Session, sessionmaker
 
-from gemm_queue.db.repositories import KernelJobRepository
-from gemm_queue.enums import RunStatus
-from gemm_queue.messages import ResultMessage
+from gemm_queue.api.db.repositories import KernelJobRepository
+from gemm_queue.common.enums import RunStatus
+from gemm_queue.common.messages import ResultMessage
 
 logger = logging.getLogger(__name__)
 

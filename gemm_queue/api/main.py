@@ -4,10 +4,11 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from gemm_queue import mq
-from gemm_queue.api import jobs
-from gemm_queue.api.result_handler import ResultHandler
-from gemm_queue.db.session import SessionLocal
+from gemm_queue.api.consumers.result_handler import ResultHandler
+from gemm_queue.api.db.session import SessionLocal
+from gemm_queue.api.routes import jobs
+from gemm_queue.api.settings import settings
+from gemm_queue.common import mq
 
 # Results are small DB writes, so a few can be in flight at once.
 RESULTS_PREFETCH = 10
@@ -19,7 +20,7 @@ FRONTEND_DIST = Path(__file__).resolve().parents[1] / "frontend" / "dist"
 async def lifespan(app: FastAPI):
     # One connection and channel for the app's lifetime, shared by all requests.
     # The channel has publisher confirms on (aio-pika's default).
-    connection = await mq.connect()
+    connection = await mq.connect(settings.rabbitmq_url)
     channel = await connection.channel()
     await mq.declare_topology(channel)
     app.state.mq_channel = channel

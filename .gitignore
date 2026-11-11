@@ -5,8 +5,8 @@ __pycache__/
 # Postgres container volume mount
 .pgdata/
 
-# Generated test matrices (recreate with tests/kernel/make_abc.py)
-tests/kernel/*.f32
+# Generated test matrices (recreate with scripts/make_abc.py)
+scripts/*.f32
 
 # Build output (rebuild with `make kernels`)
 gemm_queue/worker/kernels/bin/

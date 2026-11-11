@@ -1,6 +1,6 @@
 import numpy as np
 
-from gemm_queue.enums import Kernel
+from gemm_queue.common.enums import Kernel
 from gemm_queue.worker.inputs import make_inputs
 from gemm_queue.worker.verify import TOLERANCE, max_error
 

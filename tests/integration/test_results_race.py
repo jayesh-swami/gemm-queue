@@ -11,11 +11,11 @@ import random
 from helpers import publish_results, wait_until
 from sqlalchemy import func, select
 
-from gemm_queue.db.models import KernelJob, KernelRunResult
-from gemm_queue.db.repositories import KernelJobRepository
-from gemm_queue.db.session import SessionLocal
-from gemm_queue.enums import RunStatus
-from gemm_queue.messages import ResultMessage
+from gemm_queue.api.db.models import KernelJob, KernelRunResult
+from gemm_queue.api.db.repositories import KernelJobRepository
+from gemm_queue.api.db.session import SessionLocal
+from gemm_queue.common.enums import RunStatus
+from gemm_queue.common.messages import ResultMessage
 
 JOBS = 10
 

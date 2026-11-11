@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 
-from gemm_queue.db.models import KernelRunResult
+from gemm_queue.api.db.models import KernelRunResult
 
 
 class KernelRunResultRepository:

@@ -4,8 +4,8 @@
 import pytest
 from pydantic import ValidationError
 
-from gemm_queue.enums import Kernel
-from gemm_queue.messages import ResultMessage, TaskMessage
+from gemm_queue.common.enums import Kernel
+from gemm_queue.common.messages import ResultMessage, TaskMessage
 
 
 def test_task_round_trips_through_json():

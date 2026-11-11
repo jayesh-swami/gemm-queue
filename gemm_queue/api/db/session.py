@@ -1,7 +1,7 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from gemm_queue.config import settings
+from gemm_queue.api.settings import settings
 
 
 def createDbEngine(connectionUrl):

@@ -4,7 +4,7 @@ from typing import Annotated
 from fastapi import Depends, HTTPException
 from fastapi.security import APIKeyHeader
 
-from gemm_queue.config import settings
+from gemm_queue.api.settings import settings
 
 api_key_header = APIKeyHeader(name="X-API-Key")
 

@@ -1,8 +1,8 @@
 from sqlalchemy import ForeignKey, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
-from gemm_queue.db.models.base import AuditMixin, Base
-from gemm_queue.enums import Kernel, RunStatus
+from gemm_queue.api.db.models.base import AuditMixin, Base
+from gemm_queue.common.enums import Kernel, RunStatus
 
 
 class KernelRunResult(Base, AuditMixin):

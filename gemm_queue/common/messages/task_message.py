@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 
-from gemm_queue.enums import Kernel
+from gemm_queue.common.enums import Kernel
 
 
 class TaskMessage(BaseModel):

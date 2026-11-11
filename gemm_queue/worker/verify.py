@@ -1,6 +1,6 @@
 import numpy as np
 
-from gemm_queue.enums import Kernel
+from gemm_queue.common.enums import Kernel
 
 # fp16 kernels round A, B and C to half precision, so they get a looser bound.
 TOLERANCE = {
