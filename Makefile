@@ -5,7 +5,7 @@
 COMPOSE ?= podman compose
 
 .DEFAULT_GOAL := help
-.PHONY: help db mq down kernels run-api
+.PHONY: help db mq down kernels run-api run-worker
 
 help: ## Show this list
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | \
@@ -27,3 +27,5 @@ kernels: ## Build the HIP GEMM binary (run inside the ROCm container)
 run-api: ## Run the python api
 	uv run uvicorn gemm_queue.api.main:app --reload
 
+run-worker: ## Run the worker (WORKER_RUNNER=fake|hip)
+	uv run python -m gemm_queue.worker

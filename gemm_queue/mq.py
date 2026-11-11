@@ -1,8 +1,10 @@
+from collections.abc import Awaitable, Callable
+
 import aio_pika
-from aio_pika.abc import AbstractChannel, AbstractRobustConnection
+from aio_pika.abc import AbstractChannel, AbstractIncomingMessage, AbstractRobustConnection
 
 from gemm_queue.config import settings
-from gemm_queue.messages import TaskMessage
+from gemm_queue.messages import ResultMessage, TaskMessage
 
 TASKS_QUEUE = "gemm.tasks"
 RESULTS_QUEUE = "gemm.results"
@@ -36,15 +38,30 @@ async def declare_topology(channel: AbstractChannel) -> None:
 
 
 async def publish_task(channel: AbstractChannel, task: TaskMessage) -> None:
+    await _publish(channel, TASKS_QUEUE, task.model_dump_json(), task.task_id)
+
+
+async def publish_result(channel: AbstractChannel, result: ResultMessage) -> None:
+    await _publish(channel, RESULTS_QUEUE, result.model_dump_json(), result.task_id)
+
+
+async def consume_tasks(
+    channel: AbstractChannel, callback: Callable[[AbstractIncomingMessage], Awaitable[None]]
+) -> None:
+    queue = await channel.get_queue(TASKS_QUEUE)
+    await queue.consume(callback)
+
+
+async def _publish(channel: AbstractChannel, queue: str, body: str, message_id: int) -> None:
     # Returns once the broker confirms the message is stored. Raises if the
     # broker nacks it, no queue matches (mandatory), or no confirm arrives in time.
     await channel.default_exchange.publish(
         aio_pika.Message(
-            task.model_dump_json().encode(),
+            body.encode(),
             content_type="application/json",
             delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
-            message_id=str(task.task_id),
+            message_id=str(message_id),
         ),
-        routing_key=TASKS_QUEUE,
+        routing_key=queue,
         timeout=PUBLISH_TIMEOUT_S,
     )

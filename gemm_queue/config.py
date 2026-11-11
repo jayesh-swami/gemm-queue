@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Literal
 from urllib.parse import quote
 from sqlalchemy import URL
 from pydantic_settings import BaseSettings, SettingsConfigDict                                                                                                  
@@ -23,6 +24,9 @@ class Settings(BaseSettings):
 
     # API
     api_key: str
+
+    # Worker
+    worker_runner: Literal["fake", "hip"] = "fake"
 
     @property
     def rabbitmq_url(self) -> str:
