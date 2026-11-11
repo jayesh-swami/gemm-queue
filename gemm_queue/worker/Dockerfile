@@ -17,13 +17,13 @@ WORKDIR /app
 
 # Dependencies first, so code changes don't re-download them.
 COPY pyproject.toml uv.lock .python-version README.md ./
-RUN uv sync --locked --no-install-project
+RUN uv sync --locked --no-dev --no-install-project
 
 COPY Makefile ./
 COPY gemm_queue/worker/kernels/code gemm_queue/worker/kernels/code
 RUN make kernels HIPCC_FLAGS="-O3 --offload-arch=${GPU_ARCH}"
 
 COPY gemm_queue gemm_queue
-RUN uv sync --locked
+RUN uv sync --locked --no-dev
 
 CMD ["uv", "run", "--no-sync", "python", "-m", "gemm_queue.worker"]

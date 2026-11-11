@@ -10,12 +10,12 @@ WORKDIR /app
 
 # Dependencies first, so code changes don't re-download them.
 COPY pyproject.toml uv.lock .python-version README.md ./
-RUN uv sync --locked --no-install-project
+RUN uv sync --locked --no-dev --no-install-project
 
 COPY alembic.ini ./
 COPY alembic alembic
 COPY gemm_queue gemm_queue
-RUN uv sync --locked
+RUN uv sync --locked --no-dev
 
 EXPOSE 8000
 # Bring the schema up to date, then serve. 0.0.0.0 is inside the container only;
