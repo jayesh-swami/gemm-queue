@@ -8,6 +8,11 @@ export function getJob(jobId: number): Promise<JobDetail> {
   return request(`/jobs/${jobId}`)
 }
 
+/** Newest first. */
+export function listJobs(limit: number): Promise<JobDetail[]> {
+  return request(`/jobs?limit=${limit}`)
+}
+
 // Same origin as the page: FastAPI serves both (Vite proxies /jobs in dev).
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {

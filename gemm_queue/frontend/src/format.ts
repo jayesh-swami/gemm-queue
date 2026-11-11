@@ -11,6 +11,10 @@ export function formatError(maxError: number | null): string {
   return maxError === null ? '–' : maxError.toExponential(1)
 }
 
+export function formatTime(iso: string): string {
+  return new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+}
+
 export function formatSpeedup(naiveMs: number | null, ms: number | null): string {
   if (naiveMs === null || ms === null) return '–'
   return `${(naiveMs / ms).toFixed(1)}×`

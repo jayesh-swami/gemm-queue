@@ -4,7 +4,7 @@ import secrets
 from typing import Annotated
 
 from aio_pika.abc import AbstractChannel
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 
@@ -56,6 +56,17 @@ async def create_job(
         logger.exception("job %d saved but publishing its tasks failed", job.id)
 
     return JobCreated(job_id=job.id, seed=seed)
+
+
+@router.get("", dependencies=[Depends(require_api_key)])
+def list_jobs(
+    session: Annotated[Session, Depends(get_db_session)],
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> list[JobDetail]:
+    """Recent jobs, newest first, each with its kernel runs."""
+    jobs = KernelJobRepository(session).list_recent(limit, offset)
+    return [JobDetail.model_validate(job) for job in jobs]
 
 
 @router.get("/{job_id}", dependencies=[Depends(require_api_key)])

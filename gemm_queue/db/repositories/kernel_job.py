@@ -1,3 +1,4 @@
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from gemm_queue.db.models import KernelJob, KernelRunResult
@@ -24,6 +25,11 @@ class KernelJobRepository:
 
     def get(self, job_id: int) -> KernelJob | None:
         return self.session.get(KernelJob, job_id)
+
+    def list_recent(self, limit: int, offset: int = 0) -> list[KernelJob]:
+        """Newest jobs first, with their runs."""
+        query = select(KernelJob).order_by(KernelJob.id.desc()).limit(limit).offset(offset)
+        return list(self.session.scalars(query))
 
     def get_for_update(self, job_id: int) -> KernelJob | None:
         """Like get, but locks the job row until commit (SELECT ... FOR UPDATE)."""
