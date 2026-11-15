@@ -5,7 +5,7 @@ from gemm_queue.api.settings import settings
 
 
 def createDbEngine(connectionUrl):
-    engine = create_engine(connectionUrl, echo=True)
+    engine = create_engine(connectionUrl)
     return engine
 
 
