@@ -8,6 +8,9 @@ COMPOSE ?= podman compose -f deploy/docker-compose.yml --project-directory .
 HIPCC_FLAGS ?= -O3
 # AMD GPU the worker image compiles the kernels for (rocminfo | grep gfx)
 GPU_ARCH ?= gfx1151
+# make up WORKERS=3 RUNNER=fake: how many workers and their runner (default: WORKER_RUNNER in .env)
+WORKERS ?= 1
+RUNNER ?=
 
 .DEFAULT_GOAL := help
 .PHONY: help up db mq api worker sweeper monitoring down migrate kernels run-api run-worker run-sweeper run-frontend build-frontend test test-integration lint load
@@ -22,15 +25,16 @@ db: ## Start Postgres, wait until healthy
 mq: ## Start RabbitMQ (management UI on localhost:15672)
 	$(COMPOSE) up -d --wait mq
 
-up: api worker sweeper monitoring ## Build and start everything (app on localhost:8000)
+up: api worker sweeper monitoring ## Build and start everything; WORKERS=N RUNNER=fake|hip
 
 api: build-frontend ## Build and start the API container (serves the frontend)
 	podman build -f deploy/api.Dockerfile -t gemm-queue-api .
 	$(COMPOSE) up -d api
 
-worker: ## Build and start the GPU worker container
+worker: ## Build and start WORKERS workers (default 1); RUNNER=fake|hip overrides .env
 	podman build -f deploy/worker.Dockerfile --build-arg GPU_ARCH=$(GPU_ARCH) -t gemm-queue-worker .
-	$(COMPOSE) up -d worker
+	$(if $(RUNNER),WORKER_RUNNER=$(RUNNER)) $(COMPOSE) up -d --scale worker=$(WORKERS) worker
+	$(COMPOSE) restart pushgateway  # forget metrics of removed workers; live ones re-push in 5 s
 
 sweeper: api ## Start the sweeper batch job (uses the API image)
 	$(COMPOSE) up -d sweeper
@@ -72,5 +76,5 @@ test-integration: ## Run the integration tests (needs make db mq)
 lint: ## Run all pre-commit hooks on every file
 	uv run pre-commit run --all-files
 
-load: ## Submit a stream of jobs to watch in Grafana (JOBS=20 SIZE=1024)
+load-test: ## Submit a stream of jobs to watch in Grafana (JOBS=20 SIZE=1024)
 	uv run python scripts/load.py --jobs $(or $(JOBS),20) --size $(or $(SIZE),1024) --every $(or $(EVERY), 1)

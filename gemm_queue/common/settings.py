@@ -21,7 +21,7 @@ class CommonSettings(BaseSettings):
 
     # Where the worker and sweeper push metrics (e.g. localhost:9091). Empty: don't push.
     pushgateway_url: str = ""
-    # Name to push metrics under, e.g. worker-1. Empty: the hostname (a container ID).
+    # Name to push metrics under (e.g. sweeper). Empty: the hostname (a container ID).
     instance_name: str = ""
 
     @property
