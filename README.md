@@ -5,44 +5,42 @@ A small job system for running GPU matrix-multiplication kernels. You submit M, 
 The kernels are the workload. The project is mostly about the system around them: queueing, retries, dead-letter handling, and making sure results are never silently lost.
 
 ```mermaid
-flowchart LR
-    B[Browser] -->|POST /jobs<br/>GET /jobs/:id| API[API<br/>FastAPI + results consumer]
-    API -->|jobs and runs| DB[(Postgres)]
-
-    subgraph MQ[RabbitMQ]
-        T[[gemm.tasks]]
-        R[[gemm.results]]
-        TD[[gemm.tasks.dlq]]
-        RD[[gemm.results.dlq]]
-    end
-
-    API -->|5 tasks per job| T
-    T --> W[GPU workers<br/>1 to N]
-    W -->|result, then ack| R
-    R --> API
-    T -->|after 4 attempts| TD
-    R -->|malformed| RD
-
-    SW[Sweeper<br/>every 60 s] -->|runs stuck 10 min| DB
-    SW -->|re-publish| T
-
-    subgraph Monitoring
-        PGW[Pushgateway]
-        PE[postgres-exporter]
-        P[Prometheus]
-        G[Grafana]
-    end
-
-    W -.-> PGW
-    SW -.-> PGW
-    PGW -.-> P
-    API -.->|/metrics| P
-    MQ -.-> P
-    DB -.-> PE -.-> P
-    P -.-> G
+block-beta
+  columns 8
+  space:2 DB[("Postgres")] space SW["Sweeper<br/>every 60 s"]:2 space:2
+  space:8
+  B["Browser"] space API["API<br/>FastAPI + results consumer"] space
+  block:MQ:2
+    columns 2
+    MQL["RabbitMQ"]:2
+    T[["gemm.tasks"]]:2
+    R[["gemm.results"]]:2
+    TD[["gemm.tasks.dlq"]] RD[["gemm.results.dlq"]]
+  end
+  space W["GPU workers<br/>1 to N"]
+  space:8
+  block:MON:8
+    columns 3
+    MONL["Monitoring"]:3
+    PGW["Pushgateway"] P["Prometheus"] G["Grafana"]
+    space PE["postgres-exporter"] space
+  end
+  B -- "POST /jobs<br/>GET /jobs/:id" --> API
+  API -- "jobs and runs" --> DB
+  API -- "5 tasks per job" --> T
+  T --> W
+  W -- "result, then ack" --> R
+  R --> API
+  SW -- "stuck runs" --> DB
+  SW -- "re-publish" --> T
+  PGW --> P
+  PE --> P
+  P --> G
+  style MQL fill:none,stroke:none
+  style MONL fill:none,stroke:none
 ```
 
-Dotted lines are metrics. One job through the system:
+One job through the system:
 
 ```mermaid
 sequenceDiagram
