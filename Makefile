@@ -13,7 +13,7 @@ WORKERS ?= 1
 RUNNER ?=
 
 .DEFAULT_GOAL := help
-.PHONY: help up db mq api worker sweeper monitoring down migrate kernels run-api run-worker run-sweeper run-frontend build-frontend test test-integration lint load
+.PHONY: help up db mq api worker sweeper monitoring down migrate kernels run-api run-worker run-sweeper run-frontend build-frontend test test-integration lint load-test
 
 help: ## Show this list
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | \
@@ -76,5 +76,5 @@ test-integration: ## Run the integration tests (needs make db mq)
 lint: ## Run all pre-commit hooks on every file
 	uv run pre-commit run --all-files
 
-load-test: ## Submit a stream of jobs to watch in Grafana (JOBS=20 SIZE=1024)
-	uv run python scripts/load.py --jobs $(or $(JOBS),20) --size $(or $(SIZE),1024) --every $(or $(EVERY), 1)
+load-test: ## Submit a stream of jobs to watch in Grafana (JOBS=20 SIZE=1024 EVERY=1 PROCS=1, JOBS per process)
+	uv run python scripts/load.py --jobs $(or $(JOBS),20) --size $(or $(SIZE),1024) --every $(or $(EVERY),1) --procs $(or $(PROCS),1)

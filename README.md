@@ -96,7 +96,7 @@ Needs Podman with Compose, [uv](https://docs.astral.sh/uv/), Node and, for the G
 ```sh
 cp .env.example .env     # set the passwords and API_KEY
 make up                  # builds both images, starts Postgres, RabbitMQ, API, worker, sweeper and monitoring
-make load                # optional: submit 20 jobs to watch
+make load-test           # optional: submit 20 jobs to watch
 ```
 
 Then open http://localhost:8000 for the app and http://localhost:3000 for the Grafana dashboard. For a GPU other than gfx1151, run `make up GPU_ARCH=gfx1100` (or whatever `rocminfo` reports).
