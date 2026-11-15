@@ -5,6 +5,46 @@ A small job system for running GPU matrix-multiplication kernels. You submit M, 
 The kernels are the workload. The project is mostly about the system around them: queueing, retries, dead-letter handling, and making sure results are never silently lost.
 
 ```mermaid
+flowchart LR
+    B[Browser] -->|POST /jobs<br/>GET /jobs/:id| API[API<br/>FastAPI + results consumer]
+    API -->|jobs and runs| DB[(Postgres)]
+
+    subgraph MQ[RabbitMQ]
+        T[[gemm.tasks]]
+        R[[gemm.results]]
+        TD[[gemm.tasks.dlq]]
+        RD[[gemm.results.dlq]]
+    end
+
+    API -->|5 tasks per job| T
+    T --> W[GPU workers<br/>1 to N]
+    W -->|result, then ack| R
+    R --> API
+    T -->|after 4 attempts| TD
+    R -->|malformed| RD
+
+    SW[Sweeper<br/>every 60 s] -->|runs stuck 10 min| DB
+    SW -->|re-publish| T
+
+    subgraph Monitoring
+        PGW[Pushgateway]
+        PE[postgres-exporter]
+        P[Prometheus]
+        G[Grafana]
+    end
+
+    W -.-> PGW
+    SW -.-> PGW
+    PGW -.-> P
+    API -.->|/metrics| P
+    MQ -.-> P
+    DB -.-> PE -.-> P
+    P -.-> G
+```
+
+Dotted lines are metrics. One job through the system:
+
+```mermaid
 sequenceDiagram
     autonumber
     participant B as Browser
@@ -62,6 +102,13 @@ make load                # optional: submit 20 jobs to watch
 ```
 
 Then open http://localhost:8000 for the app and http://localhost:3000 for the Grafana dashboard. For a GPU other than gfx1151, run `make up GPU_ARCH=gfx1100` (or whatever `rocminfo` reports).
+
+The number of workers and their runner can be set when starting:
+
+```sh
+make up WORKERS=4 RUNNER=fake   # 4 workers that return the NumPy product instead of using the GPU
+make worker WORKERS=1           # scale back to one worker, runner from WORKER_RUNNER in .env
+```
 
 Without a GPU, run the worker on the host with the fake runner:
 
