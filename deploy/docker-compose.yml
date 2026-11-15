@@ -57,6 +57,20 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  sweeper:
+    # Batch job: re-publishes or fails runs whose result never came back.
+    # Same image as the API; it reads the same database.
+    image: localhost/gemm-queue-api
+    command: ["uv", "run", "--no-sync", "python", "-m", "gemm_queue.batch.sweeper"]
+    env_file: .env
+    environment:
+      POSTGRES_HOST: db
+      RABBITMQ_HOST: mq
+    depends_on:
+      api:  # applies the migrations on start
+        condition: service_started
+    restart: unless-stopped
+
   worker:
     # built by `make worker`: compose's own build step fails on the unreadable .pgdata
     image: localhost/gemm-queue-worker

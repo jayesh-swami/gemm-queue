@@ -33,6 +33,7 @@ sequenceDiagram
 - **At-least-once delivery.** The worker acks a task only after its result is published, and results are written by task ID, so a redelivered task or a duplicate result changes nothing.
 - **Dead-letter queues on both sides.** A task that keeps failing goes to `gemm.tasks.dlq` after 4 attempts; a malformed result goes straight to `gemm.results.dlq`. Database errors are retried with a pause instead of burning through the delivery limit.
 - **Row lock per job.** Results of one job are saved in parallel, so the job row is locked while a run is written. An integration test reproduces the race without the lock (5 of 5 runs left jobs stuck) and passes with it.
+- **Sweeper batch job.** Every 60 s it looks for runs with no result after 10 minutes, re-publishes their task, and marks them failed after 3 attempts, so every job ends as done or failed.
 - **Pluggable runner.** `HipRunner` calls the compiled HIP binary; `FakeRunner` returns the NumPy product, so the whole pipeline runs and is tested without a GPU.
 
 ## Results
@@ -55,7 +56,7 @@ Needs Podman with Compose, [uv](https://docs.astral.sh/uv/), Node and, for the G
 
 ```sh
 cp .env.example .env     # set the passwords and API_KEY
-make up                  # builds both images, starts Postgres, RabbitMQ, API and worker
+make up                  # builds both images, starts Postgres, RabbitMQ, API, worker and sweeper
 ```
 
 Then open http://localhost:8000. For a GPU other than gfx1151, run `make up GPU_ARCH=gfx1100` (or whatever `rocminfo` reports).
@@ -71,8 +72,8 @@ WORKER_RUNNER=fake make run-worker   # in another
 ## Tests
 
 ```sh
-make test               # 65 unit tests, no services needed
-make test-integration   # 5 tests against real Postgres and RabbitMQ (make db mq first)
+make test               # 70 unit tests, no services needed
+make test-integration   # 8 tests against real Postgres and RabbitMQ (make db mq first)
 make lint               # ruff, oxlint and pre-commit checks
 ```
 
@@ -82,6 +83,7 @@ make lint               # ruff, oxlint and pre-commit checks
 gemm_queue/common/    shared settings, enums, messages, RabbitMQ helpers
 gemm_queue/api/       FastAPI routes, results consumer, database, migrations
 gemm_queue/worker/    task handler, runners, HIP kernel source
+gemm_queue/batch/     sweeper (batch job)
 gemm_queue/frontend/  React + Vite page
 deploy/               docker-compose.yml and the two Dockerfiles
 tests/                unit/ and integration/

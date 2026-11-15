@@ -10,7 +10,7 @@ HIPCC_FLAGS ?= -O3
 GPU_ARCH ?= gfx1151
 
 .DEFAULT_GOAL := help
-.PHONY: help up db mq api worker down migrate kernels run-api run-worker run-frontend build-frontend test test-integration lint
+.PHONY: help up db mq api worker sweeper down migrate kernels run-api run-worker run-sweeper run-frontend build-frontend test test-integration lint
 
 help: ## Show this list
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | \
@@ -22,7 +22,7 @@ db: ## Start Postgres, wait until healthy
 mq: ## Start RabbitMQ (management UI on localhost:15672)
 	$(COMPOSE) up -d --wait mq
 
-up: api worker ## Build and start everything (app on localhost:8000)
+up: api worker sweeper ## Build and start everything (app on localhost:8000)
 
 api: build-frontend ## Build and start the API container (serves the frontend)
 	podman build -f deploy/api.Dockerfile -t gemm-queue-api .
@@ -31,6 +31,9 @@ api: build-frontend ## Build and start the API container (serves the frontend)
 worker: ## Build and start the GPU worker container
 	podman build -f deploy/worker.Dockerfile --build-arg GPU_ARCH=$(GPU_ARCH) -t gemm-queue-worker .
 	$(COMPOSE) up -d worker
+
+sweeper: api ## Start the sweeper batch job (uses the API image)
+	$(COMPOSE) up -d sweeper
 
 down: ## Stop all services (data is kept)
 	$(COMPOSE) down
@@ -47,6 +50,9 @@ run-api: ## Run the python api
 
 run-worker: ## Run the worker (WORKER_RUNNER=fake|hip)
 	uv run python -m gemm_queue.worker
+
+run-sweeper: ## Run the sweeper on the host
+	uv run python -m gemm_queue.batch.sweeper
 
 run-frontend: ## Run the frontend dev server (proxies /jobs to run-api)
 	cd gemm_queue/frontend && npm run dev

@@ -1,6 +1,5 @@
 import asyncio
 import logging
-from datetime import UTC, datetime
 
 from aio_pika.abc import AbstractIncomingMessage
 from pydantic import ValidationError
@@ -12,7 +11,6 @@ from gemm_queue.common.messages import ResultMessage
 
 logger = logging.getLogger(__name__)
 
-FINISHED = (RunStatus.DONE, RunStatus.FAILED)
 RETRY_DELAY_S = 5
 
 
@@ -68,14 +66,7 @@ class ResultHandler:
             run.max_error = result.max_error
             run.passed = result.passed
             run.error = None if result.success else result.message
-
-            if all(r.status in FINISHED for r in job.runs):
-                any_done = any(r.status == RunStatus.DONE for r in job.runs)
-                job.status = RunStatus.DONE if any_done else RunStatus.FAILED
-                job.finished_at = job.finished_at or datetime.now(UTC)
-            else:
-                job.status = RunStatus.RUNNING
-
+            job.refresh_status()
             session.commit()
             logger.info(
                 "saved run %d (%s) of job %d -> job %s", run.id, run.kernel, job.id, job.status
