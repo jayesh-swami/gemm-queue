@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import time
 
 from aio_pika.abc import AbstractChannel, AbstractIncomingMessage
 
@@ -7,6 +8,7 @@ from gemm_queue.common import mq
 from gemm_queue.common.messages import ResultMessage, TaskMessage
 from gemm_queue.worker.inputs import make_inputs
 from gemm_queue.worker.kernel_runner import KernelRunner
+from gemm_queue.worker.metrics import KERNEL_SECONDS, TASK_SECONDS, TASKS
 from gemm_queue.worker.verify import TOLERANCE, max_error
 
 logger = logging.getLogger(__name__)
@@ -25,8 +27,11 @@ class TaskHandler:
         A kernel failure is a normal (failed) result. Any other error sends the
         task back to the queue; after too many attempts it lands in the DLQ.
         """
+        start = time.perf_counter()
+        kernel = "unknown"  # until the message is parsed
         try:
             task = TaskMessage.model_validate_json(message.body)
+            kernel = task.kernel.value
             a, b = await asyncio.to_thread(make_inputs, task.seed, task.m, task.n, task.k)
             out = await self._runner.run(task.kernel, a, b)
 
@@ -49,6 +54,14 @@ class TaskHandler:
             )
             await mq.publish_result(self._channel, result)
             await message.ack()
+
+            if not out.success:
+                outcome = "kernel_failed"
+            else:
+                outcome = "passed" if passed else "wrong_result"
+                KERNEL_SECONDS.labels(kernel).observe(out.ms / 1e3)
+            TASKS.labels(kernel, outcome).inc()
+            TASK_SECONDS.labels(kernel).observe(time.perf_counter() - start)
             logger.info(
                 "task %d: %s %dx%dx%d success=%s ms=%s max_error=%s passed=%s",
                 task.task_id,
@@ -63,4 +76,5 @@ class TaskHandler:
             )
         except Exception:
             logger.exception("task %s failed, sending it back to the queue", message.message_id)
+            TASKS.labels(kernel, "error").inc()
             await message.reject(requeue=True)

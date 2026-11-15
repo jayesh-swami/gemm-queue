@@ -3,5 +3,6 @@
 from gemm_queue.api.db.models.base import AuditMixin, Base
 from gemm_queue.api.db.models.kernel_job import KernelJob
 from gemm_queue.api.db.models.kernel_run_result import KernelRunResult
+from gemm_queue.api.db.models.sweeper_run import SweeperRun
 
-__all__ = ["AuditMixin", "Base", "KernelJob", "KernelRunResult"]
+__all__ = ["AuditMixin", "Base", "KernelJob", "KernelRunResult", "SweeperRun"]

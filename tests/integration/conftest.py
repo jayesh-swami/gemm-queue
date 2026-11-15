@@ -19,6 +19,7 @@ os.environ.update(
         "POSTGRES_HOST": "localhost",
         "RABBITMQ_VHOST": TEST_VHOST,
         "RABBITMQ_HOST": "localhost",
+        "PUSHGATEWAY_URL": "",  # keep test numbers out of the real Pushgateway
     }
 )
 
@@ -143,5 +144,5 @@ def client(services):
 @pytest.fixture(autouse=True)
 def clean(client, worker):
     with dbEngine.begin() as conn:
-        conn.execute(text("TRUNCATE jobs, results RESTART IDENTITY CASCADE"))
+        conn.execute(text("TRUNCATE jobs, results, sweeper_runs RESTART IDENTITY CASCADE"))
     asyncio.run(purge(*QUEUES))

@@ -34,6 +34,7 @@ sequenceDiagram
 - **Dead-letter queues on both sides.** A task that keeps failing goes to `gemm.tasks.dlq` after 4 attempts; a malformed result goes straight to `gemm.results.dlq`. Database errors are retried with a pause instead of burning through the delivery limit.
 - **Row lock per job.** Results of one job are saved in parallel, so the job row is locked while a run is written. An integration test reproduces the race without the lock (5 of 5 runs left jobs stuck) and passes with it.
 - **Sweeper batch job.** Every 60 s it looks for runs with no result after 10 minutes, re-publishes their task, and marks them failed after 3 attempts, so every job ends as done or failed.
+- **Metrics.** The API serves `/metrics` for Prometheus to pull; the worker and sweeper push theirs to a Pushgateway; RabbitMQ and Postgres are scraped through their exporters. Each sweeper pass is also logged in a `sweeper_runs` table.
 - **Pluggable runner.** `HipRunner` calls the compiled HIP binary; `FakeRunner` returns the NumPy product, so the whole pipeline runs and is tested without a GPU.
 
 ## Results
@@ -56,10 +57,11 @@ Needs Podman with Compose, [uv](https://docs.astral.sh/uv/), Node and, for the G
 
 ```sh
 cp .env.example .env     # set the passwords and API_KEY
-make up                  # builds both images, starts Postgres, RabbitMQ, API, worker and sweeper
+make up                  # builds both images, starts Postgres, RabbitMQ, API, worker, sweeper and monitoring
+make load                # optional: submit 20 jobs to watch
 ```
 
-Then open http://localhost:8000. For a GPU other than gfx1151, run `make up GPU_ARCH=gfx1100` (or whatever `rocminfo` reports).
+Then open http://localhost:8000 for the app and http://localhost:3000 for the Grafana dashboard. For a GPU other than gfx1151, run `make up GPU_ARCH=gfx1100` (or whatever `rocminfo` reports).
 
 Without a GPU, run the worker on the host with the fake runner:
 
@@ -72,8 +74,8 @@ WORKER_RUNNER=fake make run-worker   # in another
 ## Tests
 
 ```sh
-make test               # 70 unit tests, no services needed
-make test-integration   # 8 tests against real Postgres and RabbitMQ (make db mq first)
+make test               # 75 unit tests, no services needed
+make test-integration   # 11 tests against real Postgres and RabbitMQ (make db mq first)
 make lint               # ruff, oxlint and pre-commit checks
 ```
 
@@ -85,6 +87,6 @@ gemm_queue/api/       FastAPI routes, results consumer, database, migrations
 gemm_queue/worker/    task handler, runners, HIP kernel source
 gemm_queue/batch/     sweeper (batch job)
 gemm_queue/frontend/  React + Vite page
-deploy/               docker-compose.yml and the two Dockerfiles
+deploy/               docker-compose.yml, the two Dockerfiles, Prometheus and Grafana config
 tests/                unit/ and integration/
 ```

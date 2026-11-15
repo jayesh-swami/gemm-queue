@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from gemm_queue.api.constants import MAX_SEED
 from gemm_queue.api.db.repositories import KernelJobRepository
 from gemm_queue.api.dependencies import get_db_session, get_mq_channel
+from gemm_queue.api.metrics import JOBS_SUBMITTED, TASK_PUBLISH_FAILURES
 from gemm_queue.api.schema import JobCreated, JobDetail, JobRequest
 from gemm_queue.api.security import require_api_key
 from gemm_queue.common import mq
@@ -35,6 +36,7 @@ async def create_job(
     # Commit first, then publish: a worker must never receive a task whose row
     # doesn't exist yet. The DB driver is sync, so it runs off the event loop.
     await run_in_threadpool(session.commit)
+    JOBS_SUBMITTED.inc()
 
     tasks = [
         TaskMessage(
@@ -54,6 +56,7 @@ async def create_job(
         # The job is already saved, so the request still succeeds. Its tasks
         # stay queued in Postgres for the re-publish sweeper to pick up.
         logger.exception("job %d saved but publishing its tasks failed", job.id)
+        TASK_PUBLISH_FAILURES.inc()
 
     return JobCreated(job_id=job.id, seed=seed)
 

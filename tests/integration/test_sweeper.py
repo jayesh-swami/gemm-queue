@@ -7,8 +7,9 @@ failed to publish, and backdated so the sweeper sees them as stuck.
 import asyncio
 
 from helpers import wait_until
-from sqlalchemy import text
+from sqlalchemy import select, text
 
+from gemm_queue.api.db.models import SweeperRun
 from gemm_queue.api.db.repositories import KernelJobRepository
 from gemm_queue.api.db.session import SessionLocal, dbEngine
 from gemm_queue.api.settings import settings
@@ -73,3 +74,16 @@ def test_recent_runs_are_left_alone():
 
     assert sweep() == (0, 0)
     assert load(job_id).status == RunStatus.QUEUED
+
+
+def test_each_pass_is_logged():
+    add_job(attempts=sweeper.MAX_ATTEMPTS)
+
+    async def run():
+        async with await mq.connect(settings.rabbitmq_url) as connection:
+            return await sweeper.run_pass(await connection.channel())
+
+    assert asyncio.run(run()) == (0, 5)
+    with SessionLocal() as session:
+        logged = session.scalars(select(SweeperRun)).all()
+    assert [(r.republished, r.failed) for r in logged] == [(0, 5)]

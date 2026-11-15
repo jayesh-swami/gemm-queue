@@ -18,6 +18,9 @@ class CommonSettings(BaseSettings):
     rabbitmq_port: int
     rabbitmq_vhost: str = "/"
 
+    # Where the worker and sweeper push metrics (e.g. localhost:9091). Empty: don't push.
+    pushgateway_url: str = ""
+
     @property
     def rabbitmq_url(self) -> str:
         user = quote(self.rabbitmq_user, safe="")

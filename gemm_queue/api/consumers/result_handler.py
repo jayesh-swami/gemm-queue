@@ -1,11 +1,13 @@
 import asyncio
 import logging
+from datetime import UTC
 
 from aio_pika.abc import AbstractIncomingMessage
 from pydantic import ValidationError
 from sqlalchemy.orm import Session, sessionmaker
 
 from gemm_queue.api.db.repositories import KernelJobRepository
+from gemm_queue.api.metrics import JOB_SECONDS, RESULTS_SAVED
 from gemm_queue.common.enums import RunStatus
 from gemm_queue.common.messages import ResultMessage
 
@@ -66,8 +68,15 @@ class ResultHandler:
             run.max_error = result.max_error
             run.passed = result.passed
             run.error = None if result.success else result.message
+            was_finished = job.finished_at is not None
             job.refresh_status()
             session.commit()
+
+            RESULTS_SAVED.labels(run.kernel.value, run.status.value).inc()
+            if job.finished_at and not was_finished:
+                # SQLite (unit tests) returns naive datetimes; Postgres returns aware ones.
+                created = job.created_at.replace(tzinfo=job.created_at.tzinfo or UTC)
+                JOB_SECONDS.observe((job.finished_at - created).total_seconds())
             logger.info(
                 "saved run %d (%s) of job %d -> job %s", run.id, run.kernel, job.id, job.status
             )

@@ -2,11 +2,19 @@ import asyncio
 import logging
 
 from gemm_queue.common import mq
+from gemm_queue.common.metrics import push
+from gemm_queue.worker.metrics import PUSH_INTERVAL_S, REGISTRY
 from gemm_queue.worker.runners import FakeRunner, HipRunner
 from gemm_queue.worker.settings import settings
 from gemm_queue.worker.task_handler import TaskHandler
 
 logger = logging.getLogger(__name__)
+
+
+async def push_metrics_forever() -> None:
+    while True:
+        await asyncio.to_thread(push, settings.pushgateway_url, "worker", REGISTRY)
+        await asyncio.sleep(PUSH_INTERVAL_S)
 
 
 async def main() -> None:
@@ -22,7 +30,7 @@ async def main() -> None:
         await mq.consume_tasks(channel, TaskHandler(runner, channel).handle)
 
         logger.info("worker ready (%s runner)", settings.worker_runner)
-        await asyncio.Future()
+        await push_metrics_forever()
 
 
 if __name__ == "__main__":
