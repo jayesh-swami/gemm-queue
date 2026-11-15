@@ -73,4 +73,4 @@ lint: ## Run all pre-commit hooks on every file
 	uv run pre-commit run --all-files
 
 load: ## Submit a stream of jobs to watch in Grafana (JOBS=20 SIZE=1024)
-	uv run python scripts/load.py --jobs $(or $(JOBS),20) --size $(or $(SIZE),1024)
+	uv run python scripts/load.py --jobs $(or $(JOBS),20) --size $(or $(SIZE),1024) --every $(or $(EVERY), 1)

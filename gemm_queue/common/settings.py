@@ -1,3 +1,4 @@
+import socket
 from pathlib import Path
 from urllib.parse import quote
 
@@ -20,6 +21,12 @@ class CommonSettings(BaseSettings):
 
     # Where the worker and sweeper push metrics (e.g. localhost:9091). Empty: don't push.
     pushgateway_url: str = ""
+    # Name to push metrics under, e.g. worker-1. Empty: the hostname (a container ID).
+    instance_name: str = ""
+
+    @property
+    def metrics_instance(self) -> str:
+        return self.instance_name or socket.gethostname()
 
     @property
     def rabbitmq_url(self) -> str:

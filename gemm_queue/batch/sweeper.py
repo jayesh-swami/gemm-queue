@@ -82,7 +82,9 @@ async def run_pass(channel: AbstractChannel) -> tuple[int, int]:
     REPUBLISHED.inc(republished)
     FAILED.inc(failed)
     LAST_SUCCESS.set_to_current_time()
-    await asyncio.to_thread(push, settings.pushgateway_url, "sweeper", REGISTRY)
+    await asyncio.to_thread(
+        push, settings.pushgateway_url, "sweeper", settings.metrics_instance, REGISTRY
+    )
     return republished, failed
 
 

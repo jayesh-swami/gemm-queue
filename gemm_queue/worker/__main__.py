@@ -13,7 +13,9 @@ logger = logging.getLogger(__name__)
 
 async def push_metrics_forever() -> None:
     while True:
-        await asyncio.to_thread(push, settings.pushgateway_url, "worker", REGISTRY)
+        await asyncio.to_thread(
+            push, settings.pushgateway_url, "worker", settings.metrics_instance, REGISTRY
+        )
         await asyncio.sleep(PUSH_INTERVAL_S)
 
 

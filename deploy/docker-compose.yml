@@ -72,6 +72,7 @@ services:
       POSTGRES_HOST: db
       RABBITMQ_HOST: mq
       PUSHGATEWAY_URL: pushgateway:9091
+      INSTANCE_NAME: sweeper
     depends_on:
       api:  # applies the migrations on start
         condition: service_healthy
@@ -87,6 +88,7 @@ services:
       RABBITMQ_HOST: mq
       WORKER_RUNNER: hip
       PUSHGATEWAY_URL: pushgateway:9091
+      INSTANCE_NAME: worker-1  # metrics label; extra workers get worker-2, worker-3, ...
     # the GPU: kfd is the compute interface, dri holds the render node
     devices:
       - /dev/kfd

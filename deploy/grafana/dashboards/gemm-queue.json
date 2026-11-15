@@ -27,7 +27,7 @@
     },
     {
       "type": "timeseries",
-      "title": "Queue depth",
+      "title": "Queue depth (messages: 5 tasks per job)",
       "id": 2,
       "datasource": {
         "type": "prometheus",
@@ -72,7 +72,7 @@
           "mode": "multi"
         }
       },
-      "description": "Messages waiting in RabbitMQ, and delivered but not yet acked."
+      "description": "Messages waiting in RabbitMQ, and delivered but not yet acked. gemm.tasks holds one message per kernel run, so a job adds 5."
     },
     {
       "type": "timeseries",
