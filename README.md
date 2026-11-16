@@ -78,7 +78,20 @@ sequenceDiagram
 - **Metrics.** The API serves `/metrics` for Prometheus to pull; the workers, results consumers and sweeper push theirs to a Pushgateway; RabbitMQ and Postgres are scraped through their exporters. Each sweeper pass is also logged in a `sweeper_runs` table.
 - **Pluggable runner.** `HipRunner` calls the compiled HIP binary; `FakeRunner` returns the NumPy product, so the whole pipeline runs and is tested without a GPU.
 
-## Results
+## Load tests
+
+Each part measured at its peak on its own, then the whole system, on one 32-thread machine with fake workers (64³ matrices), so this is the system around the kernels. Details, method and history in [docs/load-tests.md](docs/load-tests.md).
+
+| Part | Peak on its own |
+|---|---|
+| API (one process) | ~410 jobs/s = ~2,050 tasks/s |
+| 16 workers | ~2,570 tasks/s |
+| 4 / 8 results consumers | ~2,140 / ~3,040 results/s |
+| Whole system (16 workers, 4+ consumers) | 1,400–1,700 tasks/s, queues stay empty |
+
+The API is the bottleneck: one Python process at ~1.1 cores, while the workers, consumers, RabbitMQ and Postgres all have room. Four results consumers keep up with what it sends.
+
+## GPU results
 
 One 8192 × 8192 × 8192 job on a Radeon 8060S (gfx1151, ROCm 7.2.1), averaged over 5 timed runs after a warm-up:
 

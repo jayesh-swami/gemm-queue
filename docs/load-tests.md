@@ -1,88 +1,163 @@
 # Load tests
 
-16 Nov 2026. Baseline before moving the results consumer out of the API.
+Last run: 16 Nov 2026, after the results consumer moved into its own service. The numbers get updated as improvements land; the history is at the end.
 
-**Setup:** everything runs on one machine (32 CPU threads): Postgres, RabbitMQ, the API, 8 workers, the monitoring stack and the load generator. The workers use the fake runner with 64 × 64 × 64 matrices, so these numbers measure the system around the kernels, not the GPU. SQL logging is off. Each test was run once.
+**Setup:** one machine with 32 CPU threads runs everything: Postgres, RabbitMQ, the API, the workers, the results consumers, monitoring and the load generator. The workers use the fake runner on 64 × 64 × 64 matrices, so this measures the system around the kernels, not the GPU. Each run was done once.
+
+**Method:**
+1. Measure each part at its peak, on its own.
+2. Run the whole system under load.
+3. Compare the two. The whole system can't be faster than its slowest part. If it is slower than every part, something they share (RabbitMQ, Postgres, the machine) is the limit.
+
+All numbers are in tasks/s (one job = 5 tasks), so the parts can be compared.
 
 ## Summary
 
-| Part | Capacity |
+| Part | Peak on its own |
 |---|---|
-| 8 workers | ~2,000 tasks/s |
-| API taking jobs, nothing else to do | ~430 jobs/s (2,140 tasks/s) |
-| API taking jobs while also saving results | ~200 jobs/s (1,000 tasks/s) |
-| Results consumer, nothing else to do | ~630 results/s |
-| Results consumer while the API takes jobs | ~290 results/s |
+| API (one process) | ~410 jobs/s = **~2,050 tasks/s** |
+| 16 workers | **~2,570 tasks/s** |
+| 8 results consumers | **~3,040 results/s** (4: ~2,140) |
+| RabbitMQ | never above 1.2 cores |
+| Postgres | never above 1.8 cores |
+| **Whole system** (16 workers, 4 or 8 consumers) | **285–340 jobs/s = 1,400–1,700 tasks/s**, queues stay empty |
 
-- **The API process is the bottleneck.** It handles `POST /jobs` and runs the results consumer, and it never used more than ~1.2 CPU cores. Python runs one thread at a time, so the two jobs share roughly one core.
-- **Results pile up because of that.** About 1,000 tasks/s go in, but only ~290 results/s get saved, so `gemm.results` grows by ~700 messages a second during a run.
-- **The workers were never the limit.** `gemm.tasks` never held more than 25 messages while the API was taking jobs.
-- **Saving results halves how fast the API accepts jobs:** 430 jobs/s without it, 200 with it.
+- **The API is the bottleneck.** It has the lowest peak, and in the whole-system runs it sits at ~1.1 CPU cores: one Python process, which runs Python code on one core at a time. Adding load processes from 10 to 160 doesn't raise throughput; it only makes requests wait longer.
+- **Everything behind the API has room.** The workers and the consumers both have higher peaks, and RabbitMQ and Postgres use little CPU.
+- **4 results consumers are enough for what the API can send.** They save results as fast as they arrive (1,500/s, backlog under 60). 2 consumers fall behind. More than 4 still adds capacity (8 do ~3,040/s in the drain test), it just isn't needed while the API is the limit.
+- **The machine is never full.** At most 13 of 32 cores were busy. Each part spends most of its time waiting: on Python's GIL, on a row lock, on disk syncs, on round trips to RabbitMQ.
 
-## 1. API: how many jobs it accepts
+## 1. Each part at its peak
 
-Each load process sends `POST /jobs` as fast as it can, waiting for each response before sending the next. Numbers are from a 40 s window after an 8 s warm-up.
+### API: how many jobs it accepts
 
-| Processes | Jobs/s | Tasks/s | Mean latency | p95 latency | API CPU (cores) |
-|---|---|---|---|---|---|
-| 10 | 203 | 1,014 | 45 ms | 71 ms | 1.16 |
-| 20 | 202 | 1,011 | 93 ms | 225 ms | 1.18 |
-| 40 | 194 | 968 | 200 ms | 249 ms | 1.17 |
-| 80 | 194 | 968 | 405 ms | 488 ms | 1.17 |
+With the workers stopped, the API only accepts jobs and publishes tasks. Nothing else competes with it. Filling the queue with 20,000 jobs took 47–50 s:
 
-Throughput stays at ~200 jobs/s from 10 to 80 processes, and latency doubles every time the processes double. So the API was already at its limit with 10 processes. Extra requests only wait longer.
+| Run | Jobs/s | Tasks/s |
+|---|---|---|
+| 1 | 411 | 2,056 |
+| 2 | 424 | 2,120 |
+| 3 | 398 | 1,991 |
 
-This fits Little's law (jobs/s = requests in flight / latency): 10 / 45 ms ≈ 220, and 80 / 405 ms ≈ 200.
+### Workers: the drain test
 
-With 10 processes the p95 latency still looked fine (71 ms). In a test like this, where each client waits for its answer, latency alone doesn't show that the server is full. The flat throughput does.
+Stop the workers, fill `gemm.tasks` with 100,000 tasks, start N workers and measure how fast the queue empties (the slope while it drains from 80% to 20%).
 
-## 2. Results consumer: how fast it saves results
+| Workers | Tasks/s | Per worker | Worker CPU (all of them) |
+|---|---|---|---|
+| 4 | 945 | 236 | 0.7 cores |
+| 8 | 1,696 | 212 | 1.6 cores |
+| 16 | 2,569 | 161 | 3.6 cores |
 
-| Processes sending jobs | Saved/s during the run | Backlog when the load stopped | Time to empty it | Saved/s while emptying |
+More workers help, but each one does less: 236 → 161 tasks/s. A worker takes one task at a time and spends most of it waiting (0.23 cores each): for the next delivery, and for RabbitMQ to confirm the result is stored. Why that wait grows with more workers isn't proven yet. RabbitMQ isn't short of CPU, so the likely cause is something it does one message at a time per queue, such as writing each message to disk.
+
+### Results consumers: the drain test
+
+Stop the consumers, let the workers fill `gemm.results` with 100,000 results, start N consumers and measure how fast it empties.
+
+| Consumers | Results/s | Per consumer | Consumer CPU | Postgres CPU |
 |---|---|---|---|---|
-| 10 | 304 | 33,165 | 54 s | 618 |
-| 20 | 283 | 31,624 | 56 s | 616 |
-| 40 | 278 | 30,313 | 51 s | 648 |
-| 80 | 275 | 30,206 | 52 s | 636 |
+| 1 | 665 | 665 | 1.0 | 0.2 |
+| 2 | 1,319 | 659 | 1.8 | 0.4 |
+| 4 | 2,142 | 536 | 3.3 | 0.7 |
+| 8 | 3,044 | 381 | 6.4 | 1.5 |
 
-After the load stops, the API has only the results to work on. It then saves about twice as fast (~630/s) and uses about one full core.
+Up to 2 consumers scale evenly; after that each adds less. Every save locks its job's row, so the 5 results of one job wait for each other. During a load run with 8 consumers, Postgres showed up to 8 sessions waiting on that lock, plus waits on disk syncs at commit.
 
-## 3. Workers: how fast they process tasks
+## 2. The whole system
 
-To measure the workers by themselves, they need a full queue to work from:
+16 workers, N consumers, and `load.py` sending `POST /jobs` as fast as it can from P processes. Each run is a 40 s window after an 8 s warm-up.
 
-1. Stop all 8 workers.
-2. Send 20,000 jobs (100,000 tasks). This took 46.7 s, which is 428 jobs/s. The workers were stopped, so the API had no results to save and could take jobs at twice its usual rate.
-3. Start the 8 workers and time how long they take to empty `gemm.tasks`.
+| Consumers | Load processes | Jobs/s in | Results saved/s | Results backlog at the end | Mean / p95 latency | API CPU |
+|---|---|---|---|---|---|---|
+| 1 | 10 | 384 | 579 | 52,273 (growing) | 24 / 46 ms | 1.06 |
+| 1 | 80 | 338 | 578 | 42,540 (growing) | 233 / 345 ms | 1.10 |
+| 2 | 40 | 315 | 1,011 | 24,307 (growing) | 122 / 242 ms | 1.13 |
+| 4 | 40 | 300 | 1,502 | 58 | 129 / 242 ms | 1.12 |
+| 8 | 10 | 338 | 1,691 | 24 | 27 / 48 ms | 1.06 |
+| 8 | 40 | 310 | 1,547 | 26 | 125 / 242 ms | 1.12 |
+| 8 | 160 | 285 | 1,427 | 30 | 552 / 737 ms | 1.11 |
 
-| | |
+- With 1 or 2 consumers, results arrive faster than they are saved and the backlog grows. From 4 consumers on, they keep up.
+- With 8 consumers, going from 10 to 160 load processes doesn't raise throughput, while the mean latency goes from 27 ms to 552 ms. That's what a full server looks like: requests just wait longer. Little's law fits (jobs/s = requests in flight / latency): 10 / 27 ms ≈ 370 and 160 / 552 ms ≈ 290.
+- The API accepts fewer jobs here (285–384/s) than on its own (~410/s). Why it slows down when the rest of the system is busy isn't explained yet. The machine had spare cores.
+
+## 3. The bottleneck
+
+| | Tasks/s |
 |---|---|
-| Tasks in the queue | 100,000 |
-| Time to empty it | ~55 s |
-| Worker throughput (Prometheus, 5 s samples) | 1,905 to 2,029 tasks/s, steady |
-| Peak `gemm.results` backlog | ~68,000 |
-| All results saved | 156 s after the workers started (~650 results/s) |
+| API alone | ~2,050 |
+| 16 workers alone | ~2,570 |
+| 4 / 8 consumers alone | ~2,140 / ~3,040 |
+| **Whole system** | **1,400–1,700** |
 
-The sweeper re-published nothing during these tests: every run finished on its first attempt. The longest any run waited for its result was about 3.5 minutes (in the worker test), inside the sweeper's 10 minute timeout.
+The API has the lowest peak, and in the whole system it is the part running flat out (~1.1 cores) while everything else has room. So the API is the bottleneck. It's a single Python process, and Python runs one thread's code at a time, so that process can't use more than about one core.
 
-## What to do next
+The whole system runs below even the API's own peak (1,400–1,700 vs ~2,050), because the API slows down when the rest is busy. That gap is the open question in section 2.
 
-Move the results consumer into its own service. These numbers suggest:
+## History
 
-- The API should then accept close to the 430 jobs/s it reached when it had no results to save.
-- One consumer process should save ~630 results/s. Keeping up with 2,140 tasks/s would take about 4 of them, if they scale evenly.
-- With several consumers, the 5 results of one job will compete for the job row lock. That's the next likely limit.
+**Before: the results consumer ran inside the API process** (16 Nov 2026, morning; 8 workers, 1 consumer):
 
-The test to repeat afterwards: the same API sweep with 1, 2 and 4 results consumers.
+| | Before | After (now) |
+|---|---|---|
+| API intake under load | ~200 jobs/s | 285–340 jobs/s (with 4+ consumers) |
+| Results saved under load | ~290/s, backlog grew ~700/s | keeps up with 4+ consumers |
+| Results consumer on its own | ~630/s, could not scale | 665/s each; 8 do ~3,040/s |
+
+Taking jobs and saving results shared one process and one core, so saving results halved how fast the API accepted jobs (430 jobs/s with no results to save, 200 with them). Moving the consumer into its own service raised API intake by 40–70% and made the consumers scalable.
+
+## What we learned about measuring
+
+- **The measuring tool can be the load.** The first runs read queue depths with `podman exec mq rabbitmqctl` twice a second. Each call starts an Erlang VM inside the RabbitMQ container: 3.1 cores of CPU while polling, against 0.25 idle. That made RabbitMQ look like it was using 4–7 cores and seem to be the bottleneck. Reading depths from RabbitMQ's HTTP API instead costs nothing measurable. RabbitMQ's own scheduler statistics confirmed it was ~90% idle.
+- **Latency can look fine on a full server.** Each load process waits for its answer before sending the next request. At 10 processes, p95 was under 50 ms while the API was already at its limit. The flat throughput as processes are added is what shows it.
+- **A load test shows only the slowest part's capacity.** In the whole-system run, 4 and 8 consumers both saved ~1,500/s, because that's all that arrived. Only the drain test, which gives a part a full queue, shows what it can do.
+
+## Later improvements
+
+To try, then rerun these tests:
+
+| Idea | What it should change |
+|---|---|
+| Scale the API (see below) | intake above ~410 jobs/s; then the workers (~2,570 tasks/s at 16, about 510 jobs/s) become the limit |
+| Remove the job row lock: derive a job's status from its runs when it's read | consumers scale closer to evenly |
+| RabbitMQ: classic instead of quorum queues (one node, so no replication is lost), worker prefetch 2, fewer log lines | more tasks/s per worker |
+| Kubernetes, with KEDA scaling workers and consumers on queue depth | replicas follow the load; the maximums come from the tables above |
+
+### Scaling the API
+
+The API is one Python process, and Python runs one thread's code at a time (the GIL), so it tops out at about one core. Three ways past that, from least to most effort:
+
+1. **More processes in the container: `uvicorn --workers N`.** Each process gets its own event loop and core; the OS spreads connections across them. A one-line change in `deploy/api.Dockerfile`, plus:
+   - **Metrics:** each process keeps its own counters, so `/metrics` would answer for whichever process got the scrape. `prometheus_client`'s multiprocess mode (`PROMETHEUS_MULTIPROC_DIR`) adds them up; without it the dashboard and `bench.py` would be wrong.
+   - **Connections:** each process opens its own RabbitMQ connection and DB pool (5 + 10). Four processes can use 60 Postgres connections, under the default limit of 100.
+   - **Migrations:** they run once in the start command before uvicorn forks, so they stay safe.
+2. **More API containers behind a load balancer.** Like the workers, but Compose can't publish port 8000 from several containers, so something has to spread the requests: nginx, Caddy or Traefik in Compose, a Service in Kubernetes. Migrations move out of the API's start command into a one-off step, so replicas starting together don't run them at the same time. Each replica is scraped on its own. Unlike option 1, replicas can run on different machines and survive one of them failing.
+3. **Make each request cheaper.** Each job costs the API about 2.5–3 ms of CPU (1.1 cores / ~380 jobs/s). Profile where it goes (e.g. `py-spy` on the running process) before changing anything. Candidates:
+   - five publishes per job, each waiting for its own confirm (batch them, or publish one message per job and fan out later);
+   - six ORM inserts per job (one bulk insert);
+   - Pydantic, JSON and an access-log line per request (`--no-access-log` is free to try);
+   - the sync DB driver running in a thread pool (an async driver avoids the hand-off).
+
+Start with option 1 and the multiprocess metrics, then rerun `bench.py api`. Option 2 comes with the Kubernetes step.
 
 ## How it was measured
 
-With `scripts/bench.py` (`api 10 20 40 80`, then `worker`).
+```sh
+make up RUNNER=fake WORKERS=16 RESULTS=4
+uv run python scripts/bench.py api 10 40 160   # whole system, per number of load processes
+uv run python scripts/bench.py worker          # worker drain (uses the running workers)
+uv run python scripts/bench.py results         # consumer drain (uses the running consumers)
+```
 
-- **API numbers:** counters and the latency histogram read straight from the API's `/metrics` at the start and end of each window. The p95 values are estimated from the histogram buckets, so they are approximate. The mean latency is exact.
-- **Queue depths:** `rabbitmqctl list_queues` every 0.5 s. RabbitMQ updates these counts every few seconds for quorum queues, so the depths lag slightly.
-- **Worker throughput:** `rate(worker_tasks_total)` from the worker metrics in Prometheus.
+Scale between runs with `make worker WORKERS=N RUNNER=fake` and `make results RESULTS=N`.
+
+- **Throughput:** jobs accepted from the API's `/metrics`; results saved by counting rows in Postgres; drain rates from the slope of the queue depth.
+- **Latency:** from the API's request histogram. The mean is exact; p95 is estimated from the histogram buckets.
+- **CPU:** per service from `podman stats` (replicas added up); the whole machine from `/proc/stat`.
+- **Queue depths:** RabbitMQ's management API every 0.5 s. RabbitMQ refreshes these counts every few seconds, so depths lag slightly; slopes aren't affected.
 - **Caveats:**
-  - The load generator shares the machine with everything it tests.
-  - Each client waits for its answer before sending the next request, so it never overloads the API beyond the number of processes.
-  - Each test was run once.
+  - The load generator runs on the same machine as everything it tests.
+  - Each load process waits for its answer before sending the next request, so the load never exceeds the number of processes.
+  - Each run was done once.
+  - The "before" numbers were measured with the `rabbitmqctl` polling described above.
