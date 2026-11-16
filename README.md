@@ -84,12 +84,13 @@ Each part measured at its peak on its own, then the whole system, on one 32-thre
 
 | Part | Peak on its own |
 |---|---|
-| API (one process) | ~410 jobs/s = ~2,050 tasks/s |
+| API, 1 / 2 / 4 processes | ~410 / ~760 / ~1,380 jobs/s = ~2,050 / ~3,800 / ~6,900 tasks/s |
 | 16 workers | ~2,570 tasks/s |
 | 4 / 8 results consumers | ~2,140 / ~3,040 results/s |
-| Whole system (16 workers, 4+ consumers) | 1,400–1,700 tasks/s, queues stay empty |
+| Whole system (16 workers, 8 consumers), 1 API process | ~1,500 tasks/s, queues stay empty |
+| Same, 2 API processes | ~2,000 tasks/s, queues stay empty |
 
-The API is the bottleneck: one Python process at ~1.1 cores, while the workers, consumers, RabbitMQ and Postgres all have room. Four results consumers keep up with what it sends.
+With one process the API is the bottleneck: one Python process at ~1.1 cores. Running several uvicorn processes (`API_PROCESSES=N`) scales it almost evenly, and from 4 processes on the 16 workers become the limit. More processes also mean more Postgres connections: 4 API processes plus 8 consumers ran out at the default limit of 100, so compose raises it to 250.
 
 ## Failure tests
 
@@ -131,10 +132,11 @@ make load-test           # optional: submit 20 jobs to watch
 
 Then open http://localhost:8000 for the app and http://localhost:3000 for the Grafana dashboard. For a GPU other than gfx1151, run `make up GPU_ARCH=gfx1100` (or whatever `rocminfo` reports).
 
-The number of workers, their runner and the number of results consumers can be set when starting:
+The number of workers, their runner, the number of results consumers and of API processes can be set when starting:
 
 ```sh
 make up WORKERS=4 RUNNER=fake RESULTS=2   # 4 fake workers (NumPy instead of the GPU), 2 results consumers
+make api API_PROCESSES=2                  # 2 uvicorn processes in the API container (default 1)
 make worker WORKERS=1                     # scale only the workers, runner from WORKER_RUNNER in .env
 make results RESULTS=1                    # scale only the results consumers
 ```
