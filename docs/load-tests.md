@@ -1,6 +1,6 @@
 # Load tests
 
-Last run: 16 Nov 2026, after the API container started running several uvicorn processes. The numbers get updated as improvements land; the history is at the end.
+Last run: 16 Nov 2026, after the workers got a prefetch setting (several tasks at once). The numbers get updated as improvements land; the history is at the end.
 
 **Setup:** one machine with 32 CPU threads runs everything: Postgres, RabbitMQ, the API, the workers, the results consumers, monitoring and the load generator. The workers use the fake runner on 64 × 64 × 64 matrices, so this measures the system around the kernels, not the GPU. Each run was done once.
 
@@ -17,16 +17,20 @@ All numbers are in tasks/s (one job = 5 tasks), so the parts can be compared.
 |---|---|
 | API, 1 process | ~410 jobs/s = **~2,050 tasks/s** |
 | API, 2 / 4 / 8 processes | ~760 / ~1,380 / ~2,070 jobs/s = **~3,800 / ~6,900 / ~10,350 tasks/s** |
-| 16 workers | **~2,570 tasks/s** |
+| 16 workers, prefetch 1 | **~2,570 tasks/s** |
+| 16 workers, prefetch 4 / 10 | **~3,940 / ~4,970 tasks/s** |
 | 8 results consumers | **~3,040 results/s** (4: ~2,140) |
 | RabbitMQ | never above 1.8 cores |
 | Postgres | never above 2.8 cores |
 | **Whole system**, 16 workers, 8 consumers, 1 API process | **~1,500 tasks/s**, queues stay empty |
 | **Whole system**, same, 2 API processes | **~2,000 tasks/s**, queues stay empty |
+| **Whole system**, 4 API processes, prefetch 2–10 | **~2,050 tasks/s saved**, ~3,550 accepted, `gemm.results` grows |
 
 - **With one API process, the API is the bottleneck.** It runs flat out at ~1.1 cores, because one Python process runs Python code on one core at a time. Adding load processes from 10 to 160 doesn't raise throughput; it only makes requests wait longer.
 - **More processes scale the API almost evenly.** Each process uses about one more core; on its own the API goes from ~410 to ~760 to ~1,380 jobs/s with 1, 2 and 4.
-- **From 4 API processes on, the workers are the bottleneck.** The API accepts ~3,600 tasks/s, the 16 workers run ~2,050, and `gemm.tasks` grows by ~1,500 a second. 2 processes is the setting where the API and 16 workers match.
+- **From 4 API processes on, the workers were the bottleneck.** The API accepts ~3,600 tasks/s, the 16 workers ran ~2,050, and `gemm.tasks` grew by ~1,500 a second. 2 processes is the setting where the API and 16 workers (prefetch 1) match.
+- **Prefetch fixed the workers.** A worker with prefetch 1 waits idle for every round trip to RabbitMQ. With prefetch N it works on N tasks at once and the waits overlap: the same 16 workers drain 2.3× faster at prefetch 10. From prefetch 2 on, `gemm.tasks` stays empty.
+- **Now the results consumers are the bottleneck.** With 4 API processes and prefetch 2 or more, ~2,050 results/s are saved whatever the prefetch, and `gemm.results` grows instead. The 8 consumers use 7.3 cores, about one each: each is a Python process at its limit.
 - **At 8 API processes the machine is the limit.** The API uses 7–8 cores, 25–26 of 32 threads are busy, and the workers and consumers get less done than at 4.
 - **More processes means more database connections.** Each process has its own pool. 4 API processes plus 8 consumers ran Postgres out of connections at its default limit of 100; it's now 250.
 
@@ -56,6 +60,23 @@ Stop the workers, fill `gemm.tasks` with 100,000 tasks, start N workers and meas
 | 16 | 2,569 | 161 | 3.6 cores |
 
 More workers help, but each one does less: 236 → 161 tasks/s. A worker takes one task at a time and spends most of it waiting (0.23 cores each): for the next delivery, and for RabbitMQ to confirm the result is stored. Why that wait grows with more workers isn't proven yet. RabbitMQ isn't short of CPU, so the likely cause is something it does one message at a time per queue, such as writing each message to disk. The rerun with 16 workers gave 2,586 tasks/s.
+
+### Workers: prefetch
+
+Prefetch is how many unacked tasks RabbitMQ lets one worker hold. aio-pika runs each delivery as its own asyncio task, so a worker with prefetch N works on up to N tasks at once: while one waits for RabbitMQ's confirm, another runs. The same drain test, 16 workers:
+
+| Prefetch | Time to empty | Tasks/s | Per worker | Worker CPU (all of them) |
+|---|---|---|---|---|
+| 1 | 45.9 s | ~2,180 | 136 | 3.8 cores |
+| 2 | 29.8 s | ~3,350 | 209 | 5.1 cores |
+| 4 | 25.4 s | ~3,940 | 246 | 5.7 cores |
+| 10 | 20.1 s | ~4,970 | 311 | 6.4 cores |
+
+These rates are 100,000 tasks divided by the time from starting the workers to an empty queue, which includes start-up and up to ~5 s of lag before the empty queue shows. So they are lower than the real rates; at prefetch 1 the slope method gave 2,570–2,590. The slope didn't work for these shorter drains (see "What we learned about measuring").
+
+- Prefetch 2 already gives half of the gain of 10; 4 gives about 80%.
+- Prefetch stays 1 by default (`WORKER_PREFETCH`). With the GPU runner, kernels running side by side would slow each other down and the measured timings would be wrong. Higher values are for the fake runner.
+- With prefetch N, a crashed worker sends N tasks back to the queue, and each of them uses up one of its delivery attempts. The fake runner also holds N sets of matrices in memory, which matters for large sizes.
 
 ### Results consumers: the drain test
 
@@ -108,22 +129,47 @@ Up to 2 consumers scale evenly; after that each adds less. Every save locks its 
 - **8 processes:** the API takes in ~6,300 tasks/s but fewer results are saved than at 4. The API's 7–8 cores take CPU from the workers and consumers on the same machine.
 - At 4 and 8, the run with 160 load processes started with tasks the run with 40 had left in `gemm.tasks` (since fixed in `bench.py`). Intake isn't affected; the peak depths are.
 
+### Worker prefetch, 4 API processes, 8 consumers
+
+40 load processes:
+
+| Prefetch | Tasks/s in | Results saved/s | Peak `gemm.tasks` | `gemm.results` at the end | Worker CPU | Consumer CPU | Busy threads (of 32) |
+|---|---|---|---|---|---|---|---|
+| 1 | 3,739 | 1,995 | 66,090 (growing) | 64 | 3.5 | 7.1 | 23 |
+| 2 | 3,580 | 2,093 | 417 | 57,424 (growing) | 4.9 | 7.3 | 24 |
+| 4 | 3,520 | 2,054 | 63 | 58,248 (growing) | 5.1 | 7.3 | 24 |
+| 10 | 3,552 | 2,076 | 82 | 58,715 (growing) | 5.2 | 7.3 | 23 |
+
+- With prefetch 1, tasks pile up in `gemm.tasks`: the workers are the limit.
+- From prefetch 2 on, `gemm.tasks` stays empty and the pile moves to `gemm.results`: the consumers are the limit. Results saved stay at ~2,050/s, below the consumers' ~3,040/s in the drain test, because here they share the machine with the API and the workers.
+- The worker drain test shows the same: with prefetch 2 or more, `gemm.results` took 40 s to empty every time (~2,500/s), however fast the workers were.
+
 ## 3. The bottleneck
 
 | | Tasks/s |
 |---|---|
 | API alone, 1 / 2 / 4 processes | ~2,050 / ~3,800 / ~6,900 |
-| 16 workers alone | ~2,570 |
+| 16 workers alone, prefetch 1 / 4 / 10 | ~2,570 / ~3,940 / ~4,970 |
 | 4 / 8 consumers alone | ~2,140 / ~3,040 |
 | **Whole system, 1 API process** | **1,400–1,700** |
 | **Whole system, 2 API processes** | **~2,000** |
-| **Whole system, 4 API processes** | **~2,000 saved, ~3,500 accepted** |
+| **Whole system, 4 API processes, prefetch 1** | **~2,000 saved, ~3,700 accepted; `gemm.tasks` grows** |
+| **Whole system, 4 API processes, prefetch 2–10** | **~2,050 saved, ~3,550 accepted; `gemm.results` grows** |
 
 With one process, the API has the lowest peak and is the part running flat out while everything else has room. It's a single Python process, and Python runs one thread's code at a time, so that process can't use more than about one core. The whole system runs below even the API's own peak (1,400–1,700 vs ~2,050), because the API slows down when the rest is busy. That gap is the open question in section 2.
 
 With 2 or more processes, the API's peak (~3,800) is above the workers' (~2,570), and the whole system settles at ~2,000 tasks/s: what the 16 workers manage while sharing the machine with everything else. The bottleneck has moved to the workers. On a single machine, more workers only help while there are free cores; at 8 API processes there are hardly any left.
 
+With prefetch 2 or more, the workers' peak (~3,350–4,970) is above what 4 API processes send, and the whole system still saves only ~2,050 results/s. The pile is now in `gemm.results`, so the results consumers are the bottleneck. Each one runs flat out at about one core, and each save also waits on its job's row lock and a disk sync.
+
 ## History
+
+**Before: worker prefetch 1** (16 Nov 2026, evening; 4 API processes, 16 workers, 8 consumers):
+
+| | Prefetch 1 | Prefetch 2 / 4 / 10 |
+|---|---|---|
+| Workers alone (drain) | ~2,180 tasks/s | ~3,350 / ~3,940 / ~4,970 tasks/s |
+| Whole system | ~2,000 saved/s, workers are the limit | ~2,050 saved/s, results consumers are the limit |
 
 **Before: one API process** (16 Nov 2026, afternoon; 16 workers, 8 consumers):
 
@@ -147,6 +193,7 @@ Taking jobs and saving results shared one process and one core, so saving result
 - **The measuring tool can be the load.** The first runs read queue depths with `podman exec mq rabbitmqctl` twice a second. Each call starts an Erlang VM inside the RabbitMQ container: 3.1 cores of CPU while polling, against 0.25 idle. That made RabbitMQ look like it was using 4–7 cores and seem to be the bottleneck. Reading depths from RabbitMQ's HTTP API instead costs nothing measurable. RabbitMQ's own scheduler statistics confirmed it was ~90% idle.
 - **Latency can look fine on a full server.** Each load process waits for its answer before sending the next request. At 10 processes, p95 was under 50 ms while the API was already at its limit. The flat throughput as processes are added is what shows it.
 - **A load test shows only the slowest part's capacity.** In the whole-system run, 4 and 8 consumers both saved ~1,500/s, because that's all that arrived. Only the drain test, which gives a part a full queue, shows what it can do.
+- **A slope needs enough points.** RabbitMQ refreshes queue depths about every 5 s. A 45 s drain gives the slope enough distinct values; a 20–30 s drain gives one or two between 80% and 20% full, and the slope came out meaningless (once even negative). For short drains, `bench.py` reports total tasks over time to empty instead. A passive `queue.declare`, which returns the live count, would fix the slope.
 - **A faster part leaves work behind for the next run.** Once the API outpaced the workers, each run left tasks in `gemm.tasks`, and the next drain test measured those too. `bench.py` now waits for both queues to be empty before each run.
 
 ## Later improvements
@@ -155,9 +202,10 @@ To try, then rerun these tests:
 
 | Idea | What it should change |
 |---|---|
+| Remove the job row lock: derive a job's status from its runs when it's read | consumers scale closer to evenly, now that they are the limit |
+| Save results in batches: several results per transaction | fewer commits and disk syncs, less Python per result |
 | Kubernetes, with KEDA scaling workers and consumers on queue depth | replicas follow the load; the maximums come from the tables above |
-| RabbitMQ: classic instead of quorum queues (one node, so no replication is lost), worker prefetch 2, fewer log lines | more tasks/s per worker, now that the workers are the limit |
-| Remove the job row lock: derive a job's status from its runs when it's read | consumers scale closer to evenly |
+| RabbitMQ: classic instead of quorum queues (one node, so no replication is lost), fewer log lines | less work per message in RabbitMQ |
 | A connection pooler (PgBouncer) in front of Postgres | connections stop growing with every API process and consumer |
 
 ### Scaling the API
@@ -180,18 +228,18 @@ Option 2 comes with the Kubernetes step.
 ## How it was measured
 
 ```sh
-make up RUNNER=fake WORKERS=16 RESULTS=8 API_PROCESSES=1
+make up RUNNER=fake WORKERS=16 RESULTS=8 API_PROCESSES=4 PREFETCH=4
 uv run python scripts/bench.py api 40 160      # whole system, per number of load processes
 uv run python scripts/bench.py worker          # API fill rate, then worker drain (uses the running workers)
 uv run python scripts/bench.py results         # consumer drain (uses the running consumers)
 ```
 
-Scale between runs with `make api API_PROCESSES=N`, `make worker WORKERS=N RUNNER=fake` and `make results RESULTS=N`.
+Scale between runs with `make api API_PROCESSES=N`, `make worker WORKERS=N RUNNER=fake PREFETCH=N` and `make results RESULTS=N`.
 
-- **Throughput:** jobs accepted from the API's `/metrics`; results saved by counting rows in Postgres; drain rates from the slope of the queue depth.
+- **Throughput:** jobs accepted from the API's `/metrics`; results saved by counting rows in Postgres; drain rates from the slope of the queue depth, or total over time to empty for short drains.
 - **Latency:** from the API's request histogram. The mean is exact; p95 is estimated from the histogram buckets.
 - **CPU:** per service from `podman stats` (replicas added up); the whole machine from `/proc/stat`.
-- **Queue depths:** RabbitMQ's management API every 0.5 s. RabbitMQ refreshes these counts every few seconds, so depths lag slightly; slopes aren't affected.
+- **Queue depths:** RabbitMQ's management API every 0.5 s. RabbitMQ refreshes these counts about every 5 s, so depths lag and short drains get too few points for a slope.
 - **Caveats:**
   - The load generator runs on the same machine as everything it tests.
   - Each load process waits for its answer before sending the next request, so the load never exceeds the number of processes.
