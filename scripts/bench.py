@@ -13,7 +13,7 @@ results: stop the results consumers, let the workers fill gemm.results with 100,
          results, start the consumers, time the drain.
 """
 
-import base64
+import asyncio
 import json
 import os
 import re
@@ -24,6 +24,8 @@ import threading
 import time
 import urllib.request
 from pathlib import Path
+
+import aio_pika
 
 from gemm_queue.api.settings import settings
 
@@ -150,15 +152,52 @@ def quantile(q: float, before, after) -> float:
     return float("nan")
 
 
+class _LiveDepths:
+    """Ready messages per queue, straight from RabbitMQ: a passive queue.declare
+    returns the live count. The management API's counts refresh only every ~5 s,
+    too coarse for drains that take 20 s. (Not rabbitmqctl either: each call starts
+    an Erlang VM inside the broker's container and costs it several cores.)
+
+    One plain connection, on its own event loop thread, shared by all callers.
+    """
+
+    QUEUES = ("gemm.tasks", "gemm.results")
+
+    def __init__(self) -> None:
+        self._loop = asyncio.new_event_loop()
+        threading.Thread(target=self._loop.run_forever, daemon=True).start()
+        self._channel = self._run(self._open())
+
+    def _run(self, coro):
+        return asyncio.run_coroutine_threadsafe(coro, self._loop).result(timeout=10)
+
+    async def _open(self):
+        # Not connect_robust: a robust channel answers a repeated passive declare
+        # from its own cache (aio_pika/robust_channel.py), so the count would freeze.
+        connection = await aio_pika.connect(settings.rabbitmq_url)
+        return await connection.channel()
+
+    async def _counts(self) -> dict[str, int]:
+        counts = {}
+        for name in self.QUEUES:
+            queue = await self._channel.declare_queue(name, passive=True)
+            counts[name] = queue.declaration_result.message_count
+        return counts
+
+    def __call__(self) -> dict[str, int]:
+        return self._run(self._counts())
+
+
+_live_depths: _LiveDepths | None = None
+
+
 def depths() -> dict[str, int]:
-    """Messages per queue, from the management API. RabbitMQ refreshes these every few
-    seconds. (Not rabbitmqctl: each call starts an Erlang VM inside the broker's
-    container and costs it several cores when polled twice a second.)"""
-    request = urllib.request.Request("http://localhost:15672/api/queues/%2F?columns=name,messages")
-    auth = f"{settings.rabbitmq_user}:{settings.rabbitmq_password}".encode()
-    request.add_header("Authorization", "Basic " + base64.b64encode(auth).decode())
-    with urllib.request.urlopen(request, timeout=5) as response:
-        return {q["name"]: q.get("messages", 0) for q in json.load(response)}
+    """Ready messages in gemm.tasks and gemm.results, live. Unacked ones (at most
+    replicas x prefetch) aren't counted."""
+    global _live_depths
+    if _live_depths is None:
+        _live_depths = _LiveDepths()
+    return _live_depths()
 
 
 class Sampler(threading.Thread):
@@ -320,7 +359,7 @@ def bench_results(procs: int = 40, jobs_per_proc: int = 500) -> None:
     jobs = total(metrics(), "api_jobs_submitted_total") - total(m0, "api_jobs_submitted_total")
     results = 5 * int(jobs)
     wait_empty("gemm.tasks")
-    while depths().get("gemm.results", 0) < results:  # the depth lags; wait for all of them
+    while depths().get("gemm.results", 0) < results:  # wait until the workers have sent them all
         time.sleep(1)
 
     sampler = Sampler()
