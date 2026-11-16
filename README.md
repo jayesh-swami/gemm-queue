@@ -84,17 +84,17 @@ Each part measured at its peak on its own, then the whole system, on one 32-thre
 
 | Part | Peak on its own |
 |---|---|
-| API, 1 / 2 / 4 processes | ~410 / ~760 / ~1,380 jobs/s = ~2,050 / ~3,800 / ~6,900 tasks/s |
-| 16 workers, prefetch 1 / 4 / 10 | ~2,570 / ~3,940 / ~4,970 tasks/s |
-| 4 / 8 results consumers | ~2,140 / ~3,040 results/s |
-| Whole system (16 workers, 8 consumers), 1 API process | ~1,500 tasks/s, queues stay empty |
-| Same, 2 API processes | ~2,000 tasks/s, queues stay empty |
-| Same, 4 API processes, prefetch 2 or more | ~2,050 tasks/s saved, `gemm.results` grows |
+| API, 1 / 2 / 4 processes | ~410 / ~760 / ~1,320 jobs/s = ~2,050 / ~3,800 / ~6,590 tasks/s |
+| 16 workers, prefetch 1 / 4 | ~2,570 / ~5,850 tasks/s |
+| 1 / 8 results consumers | ~1,050 / ~4,740 results/s |
+| Whole system (16 workers, 8 consumers), 1 API process | ~1,500 tasks/s |
+| Same, 4 API processes, prefetch 4 | ~3,100 tasks/s, no queue grows, 25 of 32 threads busy |
 
-The bottleneck has moved twice:
+The bottleneck moved three times:
 - With one process the API is the limit: one Python process at ~1.1 cores. Running several uvicorn processes (`API_PROCESSES=N`) scales it almost evenly.
-- From 4 processes on, the workers were the limit. Prefetch (`PREFETCH=N`, fake runner only) lets each worker run several tasks at once, which made them 2.3× faster.
-- Now the 8 results consumers are the limit, at about one core each.
+- Then the workers. Prefetch (`PREFETCH=N`, fake runner only) lets each worker run several tasks at once, which made them about 2.3× faster.
+- Then the results consumers. Deriving the job status instead of storing it made every save one `UPDATE` with no lock, and each consumer ~57% faster.
+- Now the machine itself: every part does more than 4,700 tasks/s on its own, and together they use ~7.3 ms of CPU per task, about what 32 threads can supply at ~3,100 tasks/s.
 
 More API processes also mean more Postgres connections: 4 API processes plus 8 consumers ran out at the default limit of 100, so compose raises it to 250.
 
