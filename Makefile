@@ -13,6 +13,8 @@ WORKERS ?= 1
 RUNNER ?=
 # make up RESULTS=2: how many results consumers
 RESULTS ?= 1
+# make up API_PROCESSES=4: uvicorn processes in the API container (default: API_PROCESSES in .env, else 1)
+API_PROCESSES ?=
 
 .DEFAULT_GOAL := help
 .PHONY: help up db mq api results worker sweeper monitoring down migrate kernels run-api run-results run-worker run-sweeper run-frontend build-frontend test test-integration test-chaos lint load-test
@@ -27,11 +29,11 @@ db: ## Start Postgres, wait until healthy
 mq: ## Start RabbitMQ (management UI on localhost:15672)
 	$(COMPOSE) up -d --wait mq
 
-up: api results worker sweeper monitoring ## Build and start everything; WORKERS=N RUNNER=fake|hip RESULTS=N
+up: api results worker sweeper monitoring ## Build and start everything; WORKERS=N RUNNER=fake|hip RESULTS=N API_PROCESSES=N
 
 api: build-frontend ## Build and start the API container (serves the frontend)
 	podman build -f deploy/api.Dockerfile -t gemm-queue-api .
-	$(COMPOSE) up -d api
+	$(if $(API_PROCESSES),API_PROCESSES=$(API_PROCESSES)) $(COMPOSE) up -d api
 
 results: api ## Start RESULTS results consumers (default 1, uses the API image)
 	$(COMPOSE) up -d --scale results=$(RESULTS) results

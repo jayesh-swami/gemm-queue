@@ -1,3 +1,4 @@
+import os
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -5,7 +6,13 @@ from typing import Annotated
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.staticfiles import StaticFiles
-from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+from prometheus_client import (
+    CONTENT_TYPE_LATEST,
+    REGISTRY,
+    CollectorRegistry,
+    generate_latest,
+    multiprocess,
+)
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -73,8 +80,17 @@ def ready(request: Request, session: Annotated[Session, Depends(get_db_session)]
 
 @app.get("/metrics", include_in_schema=False)
 def metrics() -> Response:
-    """Prometheus scrapes this."""
-    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+    """Prometheus scrapes this.
+
+    In the container uvicorn runs several processes, each with its own counters, and
+    any one of them can get the scrape. With PROMETHEUS_MULTIPROC_DIR set, every
+    process writes its metrics to files there and this adds all of them up.
+    """
+    registry = REGISTRY
+    if "PROMETHEUS_MULTIPROC_DIR" in os.environ:
+        registry = CollectorRegistry()
+        multiprocess.MultiProcessCollector(registry)
+    return Response(generate_latest(registry), media_type=CONTENT_TYPE_LATEST)
 
 
 # The built frontend (make build-frontend), served at /. Mounted last so the API

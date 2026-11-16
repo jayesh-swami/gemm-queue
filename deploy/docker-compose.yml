@@ -48,6 +48,7 @@ services:
     environment:
       POSTGRES_HOST: db
       RABBITMQ_HOST: mq
+      WEB_CONCURRENCY: ${API_PROCESSES:-1}  # uvicorn processes; make up API_PROCESSES=N
     ports:
       - "127.0.0.1:8000:8000"   # API and frontend
     depends_on:
