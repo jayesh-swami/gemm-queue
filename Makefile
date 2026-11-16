@@ -11,6 +11,8 @@ GPU_ARCH ?= gfx1151
 # make up WORKERS=3 RUNNER=fake: how many workers and their runner (default: WORKER_RUNNER in .env)
 WORKERS ?= 1
 RUNNER ?=
+# make up PREFETCH=4: tasks each worker runs at once (default: WORKER_PREFETCH in .env, else 1)
+PREFETCH ?=
 # make up RESULTS=2: how many results consumers
 RESULTS ?= 1
 # make up API_PROCESSES=4: uvicorn processes in the API container (default: API_PROCESSES in .env, else 1)
@@ -29,7 +31,7 @@ db: ## Start Postgres, wait until healthy
 mq: ## Start RabbitMQ (management UI on localhost:15672)
 	$(COMPOSE) up -d --wait mq
 
-up: api results worker sweeper monitoring ## Build and start everything; WORKERS=N RUNNER=fake|hip RESULTS=N API_PROCESSES=N
+up: api results worker sweeper monitoring ## Build and start everything; WORKERS=N RUNNER=fake|hip PREFETCH=N RESULTS=N API_PROCESSES=N
 
 api: build-frontend ## Build and start the API container (serves the frontend)
 	podman build -f deploy/api.Dockerfile -t gemm-queue-api .
@@ -39,9 +41,9 @@ results: api ## Start RESULTS results consumers (default 1, uses the API image)
 	$(COMPOSE) up -d --scale results=$(RESULTS) results
 	$(COMPOSE) restart pushgateway  # forget metrics of removed replicas; live ones re-push in 5 s
 
-worker: ## Build and start WORKERS workers (default 1); RUNNER=fake|hip overrides .env
+worker: ## Build and start WORKERS workers (default 1); RUNNER=fake|hip and PREFETCH=N override .env
 	podman build -f deploy/worker.Dockerfile --build-arg GPU_ARCH=$(GPU_ARCH) -t gemm-queue-worker .
-	$(if $(RUNNER),WORKER_RUNNER=$(RUNNER)) $(COMPOSE) up -d --scale worker=$(WORKERS) worker
+	$(if $(RUNNER),WORKER_RUNNER=$(RUNNER)) $(if $(PREFETCH),WORKER_PREFETCH=$(PREFETCH)) $(COMPOSE) up -d --scale worker=$(WORKERS) worker
 	$(COMPOSE) restart pushgateway  # forget metrics of removed workers; live ones re-push in 5 s
 
 sweeper: api ## Start the sweeper batch job (uses the API image)

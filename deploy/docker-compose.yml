@@ -112,6 +112,7 @@ services:
     environment:
       RABBITMQ_HOST: mq
       WORKER_RUNNER: ${WORKER_RUNNER:-hip}  # from .env, or RUNNER=... on the make command
+      WORKER_PREFETCH: ${WORKER_PREFETCH:-1}  # tasks at once; >1 only with the fake runner
       PUSHGATEWAY_URL: pushgateway:9091
     # the GPU: kfd is the compute interface, dri holds the render node
     devices:

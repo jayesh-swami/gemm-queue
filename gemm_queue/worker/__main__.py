@@ -12,18 +12,22 @@ logger = logging.getLogger(__name__)
 
 
 async def main() -> None:
-    """Connect, then process tasks one at a time until stopped."""
+    """Connect, then process up to WORKER_PREFETCH tasks at a time until stopped."""
     runner = (
         HipRunner(iters=settings.kernel_iters) if settings.worker_runner == "hip" else FakeRunner()
     )
 
     async with await mq.connect(settings.rabbitmq_url) as connection:
         channel = await connection.channel()
-        await channel.set_qos(prefetch_count=1)
+        await channel.set_qos(prefetch_count=settings.worker_prefetch)
         await mq.declare_topology(channel)
         await mq.consume_tasks(channel, TaskHandler(runner, channel).handle)
 
-        logger.info("worker ready (%s runner)", settings.worker_runner)
+        logger.info(
+            "worker ready (%s runner, prefetch %d)",
+            settings.worker_runner,
+            settings.worker_prefetch,
+        )
         await push_forever(
             settings.pushgateway_url,
             "worker",
