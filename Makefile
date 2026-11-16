@@ -15,7 +15,7 @@ RUNNER ?=
 RESULTS ?= 1
 
 .DEFAULT_GOAL := help
-.PHONY: help up db mq api results worker sweeper monitoring down migrate kernels run-api run-results run-worker run-sweeper run-frontend build-frontend test test-integration lint load-test
+.PHONY: help up db mq api results worker sweeper monitoring down migrate kernels run-api run-results run-worker run-sweeper run-frontend build-frontend test test-integration test-chaos lint load-test
 
 help: ## Show this list
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | \
@@ -81,6 +81,9 @@ test: ## Run the unit tests
 
 test-integration: ## Run the integration tests (needs make db mq)
 	uv run pytest tests/integration
+
+test-chaos: ## Kill and restart services under load, check no job is lost (needs make up RUNNER=fake WORKERS=4 RESULTS=2)
+	uv run pytest tests/chaos -v -s
 
 lint: ## Run all pre-commit hooks on every file
 	uv run pre-commit run --all-files

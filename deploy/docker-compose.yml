@@ -73,6 +73,9 @@ services:
       RABBITMQ_HOST: mq
       PUSHGATEWAY_URL: pushgateway:9091
       INSTANCE_NAME: sweeper
+      # make test-chaos shortens these; normally 10 min and 60 s
+      SWEEPER_STUCK_AFTER_S: ${SWEEPER_STUCK_AFTER_S:-600}
+      SWEEPER_INTERVAL_S: ${SWEEPER_INTERVAL_S:-60}
     depends_on:
       api:  # applies the migrations on start
         condition: service_healthy

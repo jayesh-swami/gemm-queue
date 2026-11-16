@@ -91,6 +91,20 @@ Each part measured at its peak on its own, then the whole system, on one 32-thre
 
 The API is the bottleneck: one Python process at ~1.1 cores, while the workers, consumers, RabbitMQ and Postgres all have room. Four results consumers keep up with what it sends.
 
+## Failure tests
+
+`make test-chaos` breaks the running stack under load, one fault per test, then checks that every job the API accepted (202) finished, every run completed and nothing ended up in a dead-letter queue. The sweeper's timeout is shortened to 20 s for the run.
+
+| Fault | Jobs accepted | Requests that failed | Runs re-published by the sweeper | What recovered it |
+|---|---|---|---|---|
+| Worker killed mid-task | 716 | 0 | 0 | RabbitMQ redelivers its unacked task |
+| Results consumer killed mid-save | 724 | 0 | 0 | redelivery; saving a result twice changes nothing |
+| RabbitMQ restarted | 1,088 | 0 | 900 | the sweeper |
+| Postgres restarted | 1,084 | 8 | 0 | the consumers' retry; the client saw the 8 failures |
+| Queued tasks lost (queue purged) | 844 | 0 | 540 | the sweeper |
+
+When RabbitMQ restarts, the API still answers 202: the job is saved, its tasks fail to publish, and the sweeper publishes them later. Nothing is lost, but with the real 10 minute timeout those jobs wait 10 minutes. Retrying the publish in the API, or an outbox, would shorten that.
+
 ## GPU results
 
 One 8192 × 8192 × 8192 job on a Radeon 8060S (gfx1151, ROCm 7.2.1), averaged over 5 timed runs after a warm-up:
@@ -139,6 +153,7 @@ WORKER_RUNNER=fake make run-worker   # in a third
 ```sh
 make test               # 75 unit tests, no services needed
 make test-integration   # 11 tests against real Postgres and RabbitMQ (make db mq first)
+make test-chaos         # 5 failure tests against the running stack (make up RUNNER=fake WORKERS=4 RESULTS=2)
 make lint               # ruff, oxlint and pre-commit checks
 ```
 
@@ -154,5 +169,5 @@ gemm_queue/frontend/  React + Vite page
 deploy/               docker-compose.yml, the two Dockerfiles, Prometheus and Grafana config
 scripts/              load generator and benchmark
 docs/                 load test results
-tests/                unit/ and integration/
+tests/                unit/, integration/ and chaos/ (failure tests)
 ```

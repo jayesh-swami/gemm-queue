@@ -14,8 +14,8 @@ from sqlalchemy import select
 from gemm_queue.api.db.models import KernelRunResult
 from gemm_queue.api.db.repositories import KernelJobRepository, SweeperRunRepository
 from gemm_queue.api.db.session import SessionLocal
-from gemm_queue.api.settings import settings
 from gemm_queue.batch.metrics import FAILED, LAST_SUCCESS, REGISTRY, REPUBLISHED
+from gemm_queue.batch.settings import settings
 from gemm_queue.common import mq
 from gemm_queue.common.enums import RunStatus
 from gemm_queue.common.messages import TaskMessage
@@ -23,10 +23,10 @@ from gemm_queue.common.metrics import push
 
 logger = logging.getLogger(__name__)
 
-# A queued run untouched for this long is treated as lost.
-STUCK_AFTER = timedelta(minutes=10)
+# A queued run untouched for this long is treated as lost (default 10 min).
+STUCK_AFTER = timedelta(seconds=settings.sweeper_stuck_after_s)
 MAX_ATTEMPTS = 3
-INTERVAL_S = 60
+INTERVAL_S = settings.sweeper_interval_s
 
 
 async def sweep_once(channel: AbstractChannel) -> tuple[int, int]:
