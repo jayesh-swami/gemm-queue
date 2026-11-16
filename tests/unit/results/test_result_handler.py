@@ -1,6 +1,6 @@
 import pytest
 
-from gemm_queue.api.db.repositories import KernelJobRepository
+from gemm_queue.api.db.repositories import KernelJobRepository, KernelRunResultRepository
 from gemm_queue.common.enums import Kernel, RunStatus
 from gemm_queue.common.messages import ResultMessage
 from gemm_queue.results import result_handler
@@ -61,6 +61,7 @@ def test_first_result_marks_the_run_done_and_the_job_running(session_factory, jo
     run = run_of(saved, Kernel.NAIVE)
     assert run.status == RunStatus.DONE
     assert (run.ms, run.tflops, run.max_error, run.passed) == (1.0, 2.0, 1e-7, True)
+    assert run.finished_at is not None
     assert saved.status == RunStatus.RUNNING
     assert saved.finished_at is None
 
@@ -92,7 +93,7 @@ def test_job_fails_when_every_run_failed(session_factory, job):
     assert load(session_factory, job.id).status == RunStatus.FAILED
 
 
-def test_duplicate_result_changes_nothing(session_factory, job):
+def test_duplicate_result_keeps_the_first_finish_time(session_factory, job):
     handler = ResultHandler(session_factory)
     for kernel in Kernel:
         handler._save(result_for(job, kernel))
@@ -105,6 +106,19 @@ def test_duplicate_result_changes_nothing(session_factory, job):
     assert saved.finished_at == finished_at
 
 
+def test_a_late_result_overrides_the_sweepers_failed(session_factory, job):
+    """The sweeper gave up on the run, then its result arrived after all."""
+    with session_factory() as session:
+        run = KernelRunResultRepository(session).get(job.runs[0].id)
+        run.status, run.error = RunStatus.FAILED, "no result after 3 attempts"
+        session.commit()
+
+    ResultHandler(session_factory)._save(result_for(job, run.kernel))
+
+    saved = run_of(load(session_factory, job.id), run.kernel)
+    assert (saved.status, saved.error) == (RunStatus.DONE, None)
+
+
 @pytest.mark.parametrize(("task_id", "job_id"), [(999, None), (None, 999)])
 def test_result_for_unknown_run_or_job_is_ignored(session_factory, job, task_id, job_id):
     result = result_for(job, Kernel.NAIVE).model_copy(
@@ -114,7 +128,7 @@ def test_result_for_unknown_run_or_job_is_ignored(session_factory, job, task_id,
 
     saved = load(session_factory, job.id)
     assert saved.status == RunStatus.QUEUED
-    assert all(r.status == RunStatus.QUEUED for r in saved.runs)
+    assert all(r.status == RunStatus.QUEUED and r.finished_at is None for r in saved.runs)
 
 
 # --- handling a delivery: ack, retry or DLQ ---

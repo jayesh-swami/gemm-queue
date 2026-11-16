@@ -1,9 +1,11 @@
 """Results of one job saved in parallel must still finish the job.
 
 Each consumer (prefetch 10) saves several results at once, and with more than one
-replica the results of a job are spread over processes. Without the job-row lock
-(get_for_update), two saves of the same job can each miss the other's commit,
-both see an unfinished run, and the job stays "running" forever.
+replica the results of a job are spread over processes. When the job's status was
+stored, two saves of the same job could each miss the other's commit and leave
+the job "running" forever, so they had to lock the job row. Now each save writes
+only its own run and the status is derived from the runs, so there is nothing
+to miss and nothing to lock.
 """
 
 import asyncio
@@ -14,7 +16,7 @@ from conftest import start_process, stop_process
 from helpers import publish_results, wait_until
 from sqlalchemy import func, select
 
-from gemm_queue.api.db.models import KernelJob, KernelRunResult
+from gemm_queue.api.db.models import KernelRunResult
 from gemm_queue.api.db.repositories import KernelJobRepository
 from gemm_queue.api.db.session import SessionLocal
 from gemm_queue.common.enums import RunStatus
@@ -63,5 +65,6 @@ def test_parallel_results_finish_every_job(second_consumer):
     wait_until(all_runs_saved)
 
     with SessionLocal() as session:
-        statuses = session.scalars(select(KernelJob.status)).all()
-    assert statuses == [RunStatus.DONE] * JOBS
+        saved = [KernelJobRepository(session).get(job.id) for job in jobs]
+    assert [job.status for job in saved] == [RunStatus.DONE] * JOBS
+    assert all(job.finished_at is not None for job in saved)

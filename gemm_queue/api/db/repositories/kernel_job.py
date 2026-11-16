@@ -30,7 +30,3 @@ class KernelJobRepository:
         """Newest jobs first, with their runs."""
         query = select(KernelJob).order_by(KernelJob.id.desc()).limit(limit).offset(offset)
         return list(self.session.scalars(query))
-
-    def get_for_update(self, job_id: int) -> KernelJob | None:
-        """Like get, but locks the job row until commit (SELECT ... FOR UPDATE)."""
-        return self.session.get(KernelJob, job_id, with_for_update=True)

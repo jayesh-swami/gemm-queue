@@ -9,15 +9,12 @@ import logging
 from datetime import UTC, datetime, timedelta
 
 from aio_pika.abc import AbstractChannel
-from sqlalchemy import select
 
-from gemm_queue.api.db.models import KernelRunResult
-from gemm_queue.api.db.repositories import KernelJobRepository, SweeperRunRepository
+from gemm_queue.api.db.repositories import KernelRunResultRepository, SweeperRunRepository
 from gemm_queue.api.db.session import SessionLocal
 from gemm_queue.batch.metrics import FAILED, LAST_SUCCESS, REGISTRY, REPUBLISHED
 from gemm_queue.batch.settings import settings
 from gemm_queue.common import mq
-from gemm_queue.common.enums import RunStatus
 from gemm_queue.common.messages import TaskMessage
 from gemm_queue.common.metrics import push
 
@@ -32,44 +29,33 @@ INTERVAL_S = settings.sweeper_interval_s
 async def sweep_once(channel: AbstractChannel) -> tuple[int, int]:
     """One pass. Returns (re-published, failed).
 
+    Both steps are single UPDATEs that check the run is still queued and stuck
+    (compare-and-set), so a result saved at the same moment always wins and no
+    job is locked. The transaction stays open while the claimed tasks are
+    published: if publishing fails (RabbitMQ down), the rollback gives the
+    attempts back. If the commit fails after publishing, a task goes out twice,
+    which saving by task id makes harmless.
+
     The DB calls are sync and block the loop briefly; nothing else runs here.
     """
     cutoff = datetime.now(UTC) - STUCK_AFTER
     with SessionLocal() as session:
-        job_ids = session.scalars(
-            select(KernelRunResult.job_id)
-            .where(KernelRunResult.status == RunStatus.QUEUED, KernelRunResult.updated_at < cutoff)
-            .distinct()
-        ).all()
-
-    republished = failed = 0
-    for job_id in job_ids:
-        with SessionLocal() as session:
-            # Job row first, then its runs: the same lock order as the results consumer.
-            job = KernelJobRepository(session).get_for_update(job_id)
-            for run in job.runs:
-                if run.status != RunStatus.QUEUED or run.updated_at >= cutoff:
-                    continue  # finished, or retried by another pass meanwhile
-                if run.attempts >= MAX_ATTEMPTS:
-                    run.status = RunStatus.FAILED
-                    run.error = f"no result after {MAX_ATTEMPTS} attempts"
-                    failed += 1
-                else:
-                    task = TaskMessage(
-                        task_id=run.id,
-                        job_id=job.id,
-                        kernel=run.kernel,
-                        m=job.m,
-                        n=job.n,
-                        k=job.k,
-                        seed=job.seed,
-                    )
-                    await mq.publish_task(channel, task)
-                    run.attempts += 1  # also bumps updated_at, restarting the timeout
-                    republished += 1
-            job.refresh_status()
-            session.commit()
-    return republished, failed
+        repo = KernelRunResultRepository(session)
+        failed = repo.fail_stuck(cutoff, MAX_ATTEMPTS, f"no result after {MAX_ATTEMPTS} attempts")
+        claimed = repo.claim_stuck(cutoff, MAX_ATTEMPTS)
+        for run in claimed:
+            task = TaskMessage(
+                task_id=run.id,
+                job_id=run.job_id,
+                kernel=run.kernel,
+                m=run.m,
+                n=run.n,
+                k=run.k,
+                seed=run.seed,
+            )
+            await mq.publish_task(channel, task)
+        session.commit()
+    return len(claimed), failed
 
 
 async def run_pass(channel: AbstractChannel) -> tuple[int, int]:

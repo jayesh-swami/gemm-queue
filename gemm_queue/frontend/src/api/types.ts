@@ -36,9 +36,7 @@ export interface JobDetail {
   k: number
   seed: number
   status: RunStatus
-  error: string | null
   created_at: string
-  started_at: string | null
   finished_at: string | null
   kernel_runs: KernelRun[]
 }

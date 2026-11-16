@@ -45,9 +45,7 @@ class JobDetail(BaseModel):
     k: int
     n: int
     seed: int
-    status: RunStatus
-    error: str | None = None
+    status: RunStatus  # derived from the runs (KernelJob.status)
     created_at: datetime
-    started_at: datetime | None = None
     finished_at: datetime | None = None
     kernel_runs: list[KernelRun] = Field(validation_alias="runs")

@@ -1,15 +1,14 @@
 import asyncio
 import logging
-from datetime import UTC
 
 from aio_pika.abc import AbstractIncomingMessage
 from pydantic import ValidationError
 from sqlalchemy.orm import Session, sessionmaker
 
-from gemm_queue.api.db.repositories import KernelJobRepository
+from gemm_queue.api.db.repositories import KernelRunResultRepository
 from gemm_queue.common.enums import RunStatus
 from gemm_queue.common.messages import ResultMessage
-from gemm_queue.results.metrics import JOB_SECONDS, RESULTS_SAVED
+from gemm_queue.results.metrics import RESULTS_SAVED, RUN_SECONDS
 
 logger = logging.getLogger(__name__)
 
@@ -47,36 +46,30 @@ class ResultHandler:
             await message.reject(requeue=True)
 
     def _save(self, result: ResultMessage) -> None:
-        """Update the run, then the job's status once all its runs are in.
+        """Write the result into its run's row. The job's status is derived from its
+        runs when read, so the job row isn't touched or locked.
 
-        Saving the same result twice gives the same rows, so redeliveries are safe.
+        Saving the same result twice gives the same row, so redeliveries are safe.
         """
+        status = RunStatus.DONE if result.success else RunStatus.FAILED
         with self._session_factory() as session:
-            # The lock makes results of the same job save one at a time, so the
-            # "are all runs finished?" check always sees the other runs' commits.
-            job = KernelJobRepository(session).get_for_update(result.job_id)
-            run = next((r for r in job.runs if r.id == result.task_id), None) if job else None
-            if run is None:
-                logger.warning(
-                    "no run %d in job %d, dropping result", result.task_id, result.job_id
-                )
-                return
-
-            run.status = RunStatus.DONE if result.success else RunStatus.FAILED
-            run.ms = result.ms
-            run.tflops = result.tflops
-            run.max_error = result.max_error
-            run.passed = result.passed
-            run.error = None if result.success else result.message
-            was_finished = job.finished_at is not None
-            job.refresh_status()
+            saved = KernelRunResultRepository(session).save_result(
+                run_id=result.task_id,
+                job_id=result.job_id,
+                status=status,
+                ms=result.ms,
+                tflops=result.tflops,
+                max_error=result.max_error,
+                passed=result.passed,
+                error=None if result.success else result.message,
+            )
             session.commit()
 
-            RESULTS_SAVED.labels(run.kernel.value, run.status.value).inc()
-            if job.finished_at and not was_finished:
-                # SQLite (unit tests) returns naive datetimes; Postgres returns aware ones.
-                created = job.created_at.replace(tzinfo=job.created_at.tzinfo or UTC)
-                JOB_SECONDS.observe((job.finished_at - created).total_seconds())
-            logger.info(
-                "saved run %d (%s) of job %d -> job %s", run.id, run.kernel, job.id, job.status
-            )
+        if saved is None:
+            logger.warning("no run %d in job %d, dropping result", result.task_id, result.job_id)
+            return
+        RESULTS_SAVED.labels(result.kernel.value, status.value).inc()
+        RUN_SECONDS.observe((saved.finished_at - saved.created_at).total_seconds())
+        logger.info(
+            "saved run %d (%s) of job %d: %s", result.task_id, result.kernel, result.job_id, status
+        )

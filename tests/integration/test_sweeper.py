@@ -76,6 +76,25 @@ def test_recent_runs_are_left_alone():
     assert load(job_id).status == RunStatus.QUEUED
 
 
+def test_a_run_finished_meanwhile_is_left_alone():
+    """Its result came in after the run looked stuck: the sweeper's UPDATE checks
+    the status itself, so it neither re-publishes nor fails that run."""
+    job_id = add_job(attempts=sweeper.MAX_ATTEMPTS)
+    with dbEngine.begin() as conn:
+        conn.execute(
+            text(
+                "UPDATE results SET status = 'DONE', updated_at = now() - interval '1 hour' "
+                "WHERE id = (SELECT min(id) FROM results WHERE job_id = :id)"
+            ),
+            {"id": job_id},
+        )
+
+    assert sweep() == (0, 4)
+    job = load(job_id)
+    assert [r.status for r in job.runs] == [RunStatus.DONE] + [RunStatus.FAILED] * 4
+    assert job.status == RunStatus.DONE
+
+
 def test_each_pass_is_logged():
     add_job(attempts=sweeper.MAX_ATTEMPTS)
 

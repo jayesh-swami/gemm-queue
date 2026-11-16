@@ -155,12 +155,11 @@ class Load:
 
 
 def jobs_since(start: datetime) -> dict[int, RunStatus]:
-    """Every job created since start, accepted or not, with its status."""
+    """Every job created since start, accepted or not, with its status (derived
+    from its runs)."""
     with Session(engine) as session:
-        rows = session.execute(
-            select(KernelJob.id, KernelJob.status).where(KernelJob.created_at >= start)
-        )
-        return {job_id: status for job_id, status in rows}
+        jobs = session.scalars(select(KernelJob).where(KernelJob.created_at >= start))
+        return {job.id: job.status for job in jobs}
 
 
 def runs_of(job_ids: list[int]) -> list[KernelRunResult]:

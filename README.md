@@ -73,8 +73,8 @@ sequenceDiagram
 - **At-least-once delivery.** The worker acks a task only after its result is published, and results are written by task ID, so a redelivered task or a duplicate result changes nothing.
 - **Dead-letter queues on both sides.** A task that keeps failing goes to `gemm.tasks.dlq` after 4 attempts; a malformed result goes straight to `gemm.results.dlq`. Database errors are retried with a pause instead of burning through the delivery limit.
 - **Results consumer as its own service.** It used to run inside the API process. Load tests showed that process was the bottleneck: saving results halved how many jobs it could accept, and `gemm.results` grew while `gemm.tasks` stayed empty. Now it runs separately and scales with `RESULTS=N`. The numbers are in [docs/load-tests.md](docs/load-tests.md).
-- **Row lock per job.** Results of one job are saved in parallel, by one consumer or by several replicas, so the job row is locked while a run is written. An integration test reproduces the race without the lock (5 of 5 runs left jobs stuck) and passes with it, running two consumers.
-- **Sweeper batch job.** Every 60 s it looks for runs with no result after 10 minutes, re-publishes their task, and marks them failed after 3 attempts, so every job ends as done or failed.
+- **No lock per job.** A job's status isn't stored; it's derived from its runs when the job is read. Each result is saved with one `UPDATE` of its own run row, so the 5 results of a job are saved in parallel, by one consumer or several, without waiting on each other. (An earlier version stored the status and had to lock the job row: without the lock, 5 of 5 test runs left jobs stuck.) An integration test runs two consumers on shuffled results.
+- **Sweeper batch job.** Every 60 s it looks for runs with no result after 10 minutes, re-publishes their task, and marks them failed after 3 attempts, so every job ends as done or failed. Its updates check in the same statement that the run is still queued (compare-and-set), so a result that arrives at the same moment always wins.
 - **Metrics.** The API serves `/metrics` for Prometheus to pull; the workers, results consumers and sweeper push theirs to a Pushgateway; RabbitMQ and Postgres are scraped through their exporters. Each sweeper pass is also logged in a `sweeper_runs` table.
 - **Pluggable runner.** `HipRunner` calls the compiled HIP binary; `FakeRunner` returns the NumPy product, so the whole pipeline runs and is tested without a GPU.
 
@@ -161,7 +161,7 @@ WORKER_RUNNER=fake make run-worker   # in a third
 
 ```sh
 make test               # 75 unit tests, no services needed
-make test-integration   # 11 tests against real Postgres and RabbitMQ (make db mq first)
+make test-integration   # 12 tests against real Postgres and RabbitMQ (make db mq first)
 make test-chaos         # 5 failure tests against the running stack (make up RUNNER=fake WORKERS=4 RESULTS=2)
 make lint               # ruff, oxlint and pre-commit checks
 ```
