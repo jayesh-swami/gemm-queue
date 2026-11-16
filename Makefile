@@ -48,8 +48,8 @@ sweeper: api ## Start the sweeper batch job (uses the API image)
 monitoring: ## Start Prometheus, Pushgateway, Postgres exporter and Grafana (localhost:3000)
 	$(COMPOSE) up -d pushgateway postgres-exporter prometheus grafana
 
-down: ## Stop all services (data is kept)
-	$(COMPOSE) down
+down: ## Stop all services, or one: SERVICE=worker (data is kept)
+	$(COMPOSE) down $(SERVICE)
 
 migrate: ## Apply DB migrations (the API container also does this on start)
 	uv run alembic -c gemm_queue/api/alembic.ini upgrade head
