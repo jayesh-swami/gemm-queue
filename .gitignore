@@ -11,3 +11,6 @@ scripts/*.f32
 # Build output (rebuild with `make kernels`)
 gemm_queue/worker/kernels/bin/
 .idea/
+
+# Private notes: next steps and learnings, not part of the repo
+notes/

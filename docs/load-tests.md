@@ -75,7 +75,7 @@ Prefetch is how many unacked tasks RabbitMQ lets one worker hold. aio-pika runs 
 | 4 | 25.4 s | ~3,940 | 246 | 5.7 cores |
 | 10 | 20.1 s | ~4,970 | 311 | 6.4 cores |
 
-These rates are 100,000 tasks divided by the time from starting the workers to an empty queue, which includes start-up and up to ~5 s of lag before the empty queue shows. So they are lower than the real rates; at prefetch 1 the slope method gave 2,570–2,590. The slope didn't work for these shorter drains (see "What we learned about measuring").
+These rates are 100,000 tasks divided by the time from starting the workers to an empty queue, which includes start-up and up to ~5 s of lag before the empty queue shows. So they are lower than the real rates; at prefetch 1 the slope method gave 2,570–2,590. The slope didn't work for these shorter drains: RabbitMQ's management API refreshed queue counts only every ~5 s, which left one or two points between the 80% and 20% marks.
 
 - Prefetch 2 already gives half of the gain of 10; 4 gives about 80%.
 - With live queue depths (after these runs), prefetch 4 gave a proper slope: **~5,850 tasks/s** (5,070 as total over time to empty). So the numbers in this table are low by roughly 15–25%.
@@ -213,6 +213,24 @@ CPU per task in the whole-system run without the job lock (cores ÷ 3,089 tasks/
 
 The 32 threads are 16 cores with SMT. Two threads on one core get roughly 1.2–1.3 cores of work done, not 2, so the machine supplies about 20 cores' worth. 20 cores ÷ ~7 ms per task ≈ 2,800–3,200 tasks/s, which is where the whole system sits. To go further, a task has to cost less CPU (the consumers and Postgres first, they cost the most), or the services have to spread over more machines.
 
+## 4. The database
+
+After a day of benchmarks (16 Nov 2026, before purging it):
+
+| Table | Rows | Table size | Indexes |
+|---|---|---|---|
+| `results` | 8.6 M | 1.77 GB | 0.94 GB |
+| `jobs` | 1.7 M | 151 MB | 44 MB |
+
+- **99.9% of it was benchmark data:** 1,719,483 of 1,721,706 jobs were fake-runner jobs of 64³ or smaller.
+- **About 1.7 KB per job:** one `jobs` row and five `results` rows, with their indexes. At the ~620 jobs/s of the whole-system run that's ~1 MB/s: **~3.6 GB an hour, ~90 GB a day.** A real deployment needs a retention policy, e.g. partitioning `results` and `jobs` by day or month and dropping old partitions whole.
+- **A redundant index:** `ix_results_job_id` (195 MB) duplicates the unique index on `(job_id, kernel)`, which starts with `job_id` and serves the same lookups.
+- **Only 37% of the updates to `results` were HOT.** A HOT ("heap-only tuple") update writes the new row version on the same page and touches no index. It needs free space on that page. Each run is inserted as queued and updated once when its result arrives; with the default fillfactor of 100 the page is usually full by then, so the new version goes to another page and all three indexes get a new entry. A fillfactor of ~80–85 on `results` leaves room for that one update.
+- **Postgres runs on its defaults:** `shared_buffers` 128 MB against 2.7 GB of `results` and its indexes, and `max_wal_size` 1 GB, which makes checkpoints frequent at this write rate (after each one, the first change to a page logs the whole 8 KB page). `pg_stat_statements` isn't enabled, so the cost of each query isn't visible yet.
+- **The benchmarks ran on a table that kept growing.** The morning's "before" numbers ran on a much smaller table than the night's "after" numbers. That may be part of why Postgres's CPU per result went up after the job lock was removed; not checked.
+
+The database was then purged (2.9 GB → 8 MB; the 2,223 jobs that weren't benchmarks were exported first). From now on, benchmarks start from an empty database.
+
 ## History
 
 **Before: job status stored, one lock per job** (16 Nov 2026, night; 4 API processes, 16 workers, 8 consumers):
@@ -246,47 +264,6 @@ The 32 threads are 16 cores with SMT. Two threads on one core get roughly 1.2–
 
 Taking jobs and saving results shared one process and one core, so saving results halved how fast the API accepted jobs (430 jobs/s with no results to save, 200 with them). Moving the consumer into its own service raised API intake by 40–70% and made the consumers scalable.
 
-## What we learned about measuring
-
-- **The measuring tool can be the load.** The first runs read queue depths with `podman exec mq rabbitmqctl` twice a second. Each call starts an Erlang VM inside the RabbitMQ container: 3.1 cores of CPU while polling, against 0.25 idle. That made RabbitMQ look like it was using 4–7 cores and seem to be the bottleneck. Reading depths from RabbitMQ's HTTP API instead costs nothing measurable. RabbitMQ's own scheduler statistics confirmed it was ~90% idle.
-- **Latency can look fine on a full server.** Each load process waits for its answer before sending the next request. At 10 processes, p95 was under 50 ms while the API was already at its limit. The flat throughput as processes are added is what shows it.
-- **A load test shows only the slowest part's capacity.** In the whole-system run, 4 and 8 consumers both saved ~1,500/s, because that's all that arrived. Only the drain test, which gives a part a full queue, shows what it can do.
-- **A slope needs enough points.** RabbitMQ refreshes queue depths about every 5 s. A 45 s drain gives the slope enough distinct values; a 20–30 s drain gives one or two between 80% and 20% full, and the slope came out meaningless (once even negative). For short drains, `bench.py` reports total tasks over time to empty instead. A passive `queue.declare`, which returns the live count, would fix the slope.
-- **A cache can freeze a live reading.** The first version of the live depths used aio-pika's robust connection, which answers a repeated passive `queue.declare` from its own cache. The bench saw the first count forever and waited for results that were already there. A reading that never changes deserves a check.
-- **A stalled benchmark is a fault test too.** While the bench hung, the consumers stayed stopped for over 10 minutes. The sweeper can't tell a lost result from one waiting in `gemm.results`, so it re-published all 100,000 runs and the workers ran every task twice (retry amplification). Nothing was lost and the duplicates were harmless, but it doubled the work.
-- **A faster part leaves work behind for the next run.** Once the API outpaced the workers, each run left tasks in `gemm.tasks`, and the next drain test measured those too. `bench.py` now waits for both queues to be empty before each run.
-
-## Later improvements
-
-To try, then rerun these tests:
-
-| Idea | What it should change |
-|---|---|
-| Profile a consumer and a worker; check `pg_stat_statements` for the save | find where the ~7.3 ms per task goes before changing anything |
-| Save results in batches: several results per transaction | fewer commits and disk syncs, less Python per result |
-| Worker and consumer: uvloop, one thread hand-off per task instead of three, no log line per task | less CPU per task |
-| Sweeper: skip re-publishing while `gemm.results` has a backlog, or lease tasks to workers | no retry amplification when the consumers are down or behind |
-| Kubernetes, with KEDA scaling workers and consumers on queue depth | replicas follow the load; the maximums come from the tables above |
-| RabbitMQ: classic instead of quorum queues (one node, so no replication is lost), fewer log lines | less work per message in RabbitMQ |
-| A connection pooler (PgBouncer) in front of Postgres | connections stop growing with every API process and consumer |
-
-### Scaling the API
-
-The API is one Python process, and Python runs one thread's code at a time (the GIL), so it tops out at about one core. Three ways past that, from least to most effort:
-
-1. **More processes in the container: `uvicorn --workers N`. Done** (`make up API_PROCESSES=N`, default 1). Each process gets its own event loop and core; the OS spreads connections across them.
-   - **Metrics:** each process keeps its own counters, so `/metrics` would answer for whichever process got the scrape. The start command sets `PROMETHEUS_MULTIPROC_DIR`; each process writes its metrics there and `/metrics` adds them up. Setting it with `ENV` in the Dockerfile broke the results consumer and the sweeper, which use the same image but don't create that directory.
-   - **Connections:** each process opens its own RabbitMQ connection and a DB pool of up to 15 (5 + 10 overflow). So do the results consumers. 4 API processes plus 8 consumers ran Postgres out of connections at the default limit of 100: requests failed and `bench.py`'s own `psql` couldn't connect. `max_connections` is now 250, enough for 8 of each. Beyond that, a pooler like PgBouncer keeps the number of real Postgres connections fixed.
-   - **Migrations:** they run once in the start command before uvicorn forks, so they stay safe.
-2. **More API containers behind a load balancer.** Like the workers, but Compose can't publish port 8000 from several containers, so something has to spread the requests: nginx, Caddy or Traefik in Compose, a Service in Kubernetes. Migrations move out of the API's start command into a one-off step, so replicas starting together don't run them at the same time. Each replica is scraped on its own. Unlike option 1, replicas can run on different machines and survive one of them failing.
-3. **Make each request cheaper.** Each job costs the API about 3–4 ms of CPU (1.1 cores / ~300 jobs/s with one process). Profile where it goes (e.g. `py-spy` on the running process) before changing anything. Candidates:
-   - five publishes per job, each waiting for its own confirm (batch them, or publish one message per job and fan out later);
-   - six ORM inserts per job (one bulk insert);
-   - Pydantic, JSON and an access-log line per request (`--no-access-log` is free to try);
-   - the sync DB driver running in a thread pool (an async driver avoids the hand-off).
-
-Option 2 comes with the Kubernetes step.
-
 ## How it was measured
 
 ```sh
@@ -306,4 +283,5 @@ Scale between runs with `make api API_PROCESSES=N`, `make worker WORKERS=N RUNNE
   - The load generator runs on the same machine as everything it tests.
   - Each load process waits for its answer before sending the next request, so the load never exceeds the number of processes.
   - Each run was done once.
+  - Until 16 Nov 2026 the database was never reset between runs, so later runs worked on bigger tables (up to 8.6 M runs). Since then benchmarks start from an empty database.
   - The "before" numbers of the results consumer split were measured with the `rabbitmqctl` polling described above.

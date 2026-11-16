@@ -98,6 +98,8 @@ The bottleneck moved three times:
 
 More API processes also mean more Postgres connections: 4 API processes plus 8 consumers ran out at the default limit of 100, so compose raises it to 250.
 
+The database grows by about 1.7 KB per job, ~90 GB a day at that rate, so a real deployment needs a retention policy. Postgres also still runs on its default settings; the database section of the load-test doc has the details.
+
 ## Failure tests
 
 `make test-chaos` breaks the running stack under load, one fault per test, then checks that every job the API accepted (202) finished, every run completed and nothing ended up in a dead-letter queue. The sweeper's timeout is shortened to 20 s for the run.
