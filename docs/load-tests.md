@@ -25,7 +25,8 @@ All numbers are in tasks/s (one job = 5 tasks), so the parts can be compared.
 | **Whole system**, 16 workers, 8 consumers, 1 API process | **~1,500 tasks/s**, queues stay empty |
 | **Whole system**, same, 2 API processes | **~2,000 tasks/s**, queues stay empty |
 | **Whole system**, 4 API processes, prefetch 2–10, job lock | ~2,050 tasks/s saved, ~3,550 accepted, `gemm.results` grows |
-| **Whole system**, 4 API processes, prefetch 4, no job lock | **~3,100 tasks/s**, queues stay small, 25 of 32 threads busy |
+| **Whole system**, 4 API processes, prefetch 4, no job lock | **~3,100–3,200 tasks/s**, queues stay small, 25 of 32 threads busy |
+| **Whole system**, everything at max (8 API processes, prefetch 10, 10 consumers) | **~3,250–3,300 tasks/s**, `gemm.tasks` peaks at ~23,000, p95 doubles |
 
 - **With one API process, the API is the bottleneck.** It runs flat out at ~1.1 cores, because one Python process runs Python code on one core at a time. Adding load processes from 10 to 160 doesn't raise throughput; it only makes requests wait longer.
 - **More processes scale the API almost evenly.** Each process uses about one more core; on its own the API goes from ~410 to ~760 to ~1,380 jobs/s with 1, 2 and 4.
@@ -33,7 +34,7 @@ All numbers are in tasks/s (one job = 5 tasks), so the parts can be compared.
 - **Prefetch fixed the workers.** A worker with prefetch 1 waits idle for every round trip to RabbitMQ. With prefetch N it works on N tasks at once and the waits overlap: the same 16 workers drain 2.3× faster at prefetch 10. From prefetch 2 on, `gemm.tasks` stays empty.
 - **Then the results consumers were the bottleneck.** With 4 API processes and prefetch 2 or more, ~2,050 results/s were saved whatever the prefetch, and `gemm.results` grew instead. The 8 consumers used 7.3 cores, about one each: each a Python process at its limit.
 - **Deriving the job status made every consumer ~57% faster.** A result is now one `UPDATE` of its own run row: no lock on the job, no loading the job and its runs. The whole system went from ~2,050 to ~3,100 tasks/s.
-- **Now the machine is the limit.** On its own every part does more than 4,700 tasks/s, but together they settle at ~3,100 with 25 of 32 threads busy. Each task costs ~7.3 ms of CPU across all services, which is what this machine can supply at that rate (see section 3).
+- **Now the machine is the limit.** On its own every part does more than 4,700 tasks/s, but together they settle at ~3,100–3,200 with 25 of 32 threads busy. Each task costs ~7 ms of CPU across all services, which is what this machine can supply at that rate (see section 3). Putting every part at its maximum adds only 3–6%.
 - **At 8 API processes the machine is the limit.** The API uses 7–8 cores, 25–26 of 32 threads are busy, and the workers and consumers get less done than at 4.
 - **More processes means more database connections.** Each process has its own pool. 4 API processes plus 8 consumers ran Postgres out of connections at its default limit of 100; it's now 250.
 
@@ -176,6 +177,22 @@ CPU per service: API 3.7, consumers 8.1, workers 4.8, RabbitMQ 1.9, Postgres 4.2
 - Everything keeps up: no queue grows, and results are saved as fast as jobs arrive.
 - The API accepts less than in the prefetch runs (3,105 vs ~3,550 tasks/s) with the same 4 processes. The consumers now use 8 cores instead of 7, and Postgres 4.2 instead of 2.5, so the API gets less of the machine.
 
+### Everything at max, on an empty database
+
+After the database was purged (section 4). 16 workers in all runs.
+
+| Setup | Load processes | Tasks/s in | Results saved/s | Peak `gemm.tasks` | Mean / p95 latency | Busy threads (of 32) | CPU per task |
+|---|---|---|---|---|---|---|---|
+| 4 API processes, prefetch 4, 8 consumers | 40 | 3,187 | 3,171 | 29 | 58 / 95 ms | 25 | 7.2 ms |
+| 8 API processes, prefetch 10, 10 consumers | 40 | 3,294 | 3,387 | 22,647 | 56 / 191 ms | 25 | 6.6 ms |
+| 8 API processes, prefetch 10, 10 consumers | 160 | 3,264 | 3,243 | 24,500 | 234 / 884 ms | 25 | 6.9 ms |
+
+- **The empty database barely changes anything:** 3,171 against 3,089 results/s on the 8.6 M-row table (+3%), and Postgres's CPU per task is the same (1.35 ms).
+- **Everything at max adds 3–6%.** The services use ~22.5 cores in every run; more processes only divide that CPU differently.
+- **On a full machine the bottleneck floats.** With everything at max, the API's 8 processes got 3.8–4.2 cores and the workers got less than in the first run (3.7–4.3 against 4.9 cores), so `gemm.tasks` piled up to ~23,000 even with prefetch 10. Whichever service the OS gives less CPU becomes the queue, and latency doubles.
+- **The load generator isn't the limit:** 160 load processes give the same throughput as 40, with 4× the latency (Little's law).
+- 10 consumers rather than 12: 8 API processes and 12 consumers could open ~255 Postgres connections, over the limit of 250.
+
 ## 3. The bottleneck
 
 | | Tasks/s |
@@ -188,7 +205,8 @@ CPU per service: API 3.7, consumers 8.1, workers 4.8, RabbitMQ 1.9, Postgres 4.2
 | **Whole system, 4 API processes, prefetch 1** | **~2,000 saved, ~3,700 accepted; `gemm.tasks` grows** |
 | **Whole system, 4 API processes, prefetch 2–10** | **~2,050 saved, ~3,550 accepted; `gemm.results` grows** |
 | API alone, 4 processes (rerun) / 16 workers alone, prefetch 4 / 8 consumers alone, no job lock | ~6,590 / ~5,850 / ~4,740 |
-| **Whole system, no job lock** | **~3,100, queues stay small** |
+| **Whole system, no job lock** | **~3,100–3,200, queues stay small** |
+| **Whole system, everything at max** | **~3,250–3,300** |
 
 With one process, the API has the lowest peak and is the part running flat out while everything else has room. It's a single Python process, and Python runs one thread's code at a time, so that process can't use more than about one core. The whole system runs below even the API's own peak (1,400–1,700 vs ~2,050), because the API slows down when the rest is busy. That gap is the open question in section 2.
 
@@ -196,7 +214,7 @@ With 2 or more processes, the API's peak (~3,800) is above the workers' (~2,570)
 
 With prefetch 2 or more, the workers' peak was above what 4 API processes send, and the whole system still saved only ~2,050 results/s. The pile was in `gemm.results`, so the results consumers were the bottleneck. Each one ran flat out at about one core, and each save also waited on its job's row lock and a disk sync.
 
-Without the job lock, every part on its own is above 4,700 tasks/s and the whole system runs at ~3,100 with no queue growing. No single part is the bottleneck; the machine is.
+Without the job lock, every part on its own is above 4,700 tasks/s and the whole system runs at ~3,100–3,200 with no queue growing. No single part is the bottleneck; the machine is. Putting every part at its maximum confirms it: ~3,250–3,300 tasks/s, the same ~22.5 cores used, and a backlog in whichever queue's service got less CPU.
 
 ### CPU budget per task
 
@@ -211,7 +229,7 @@ CPU per task in the whole-system run without the job lock (cores ÷ 3,089 tasks/
 | RabbitMQ | 0.62 ms |
 | **Total** | **~7.3 ms** |
 
-The 32 threads are 16 cores with SMT. Two threads on one core get roughly 1.2–1.3 cores of work done, not 2, so the machine supplies about 20 cores' worth. 20 cores ÷ ~7 ms per task ≈ 2,800–3,200 tasks/s, which is where the whole system sits. To go further, a task has to cost less CPU (the consumers and Postgres first, they cost the most), or the services have to spread over more machines.
+The 32 threads are 16 cores with SMT. Two threads on one core get roughly 1.2–1.3 cores of work done, not 2, so the machine supplies about 20 cores' worth. 20 cores ÷ ~7 ms per task ≈ 2,800–3,200 tasks/s, which is where the whole system sits (3,100–3,300 measured). To go further, a task has to cost less CPU (the consumers and Postgres first, they cost the most), or the services have to spread over more machines.
 
 ## 4. The database
 
