@@ -4,6 +4,10 @@ name: gemm-queue
 services:
   db:
     image: postgres:16
+    # Every API process and results consumer has its own pool of up to 15 connections
+    # (SQLAlchemy's 5 + 10 overflow). The default 100 runs out at 4 API processes with
+    # 8 consumers; 250 covers 8 of each. Many more replicas would need a pooler (PgBouncer).
+    command: ["postgres", "-c", "max_connections=250"]
     env_file: .env
     ports:
       - "127.0.0.1:5432:5432"
