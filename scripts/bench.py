@@ -6,7 +6,7 @@ uv run python scripts/bench.py worker            # time the workers emptying a f
 Expects the stack up (make up) with fake workers. Prints one JSON line per run.
 
 api:    per process count, an 8 s warm-up, then a 40 s window. Then the load stops
-        and the time for gemm.results to empty is measured (the consumer alone).
+        and the time for gemm.results to empty is measured (the consumers alone).
 worker: stop the workers, queue 20,000 jobs, start the workers, time the drain.
 """
 
@@ -26,9 +26,9 @@ COMPOSE = ["podman", "compose", "-f", "deploy/docker-compose.yml", "--project-di
 POST = 'method="POST",route="/jobs"'
 
 
-def metrics() -> dict[str, float]:
-    """The API's /metrics as {series: value}."""
-    text = urllib.request.urlopen("http://localhost:8000/metrics").read().decode()
+def metrics(url: str = "http://localhost:8000/metrics") -> dict[str, float]:
+    """A /metrics page (the API's by default) as {series: value}."""
+    text = urllib.request.urlopen(url).read().decode()
     out = {}
     for line in text.splitlines():
         if line and not line.startswith("#"):
@@ -37,9 +37,49 @@ def metrics() -> dict[str, float]:
     return out
 
 
-def total(m: dict[str, float], name: str) -> float:
-    """Sum of a metric over all its labels."""
-    return sum(v for k, v in m.items() if k == name or k.startswith(name + "{"))
+def total(m: dict[str, float], name: str, job: str = "") -> float:
+    """Sum of a metric over all its labels, optionally only one Pushgateway job."""
+    return sum(
+        v
+        for k, v in m.items()
+        if (k == name or k.startswith(name + "{")) and (not job or f'job="{job}"' in k)
+    )
+
+
+def results_cpu() -> float:
+    """CPU seconds used by all results consumers, as last pushed (every 5 s)."""
+    return total(metrics("http://localhost:9091/metrics"), "process_cpu_seconds_total", "results")
+
+
+def saved_total() -> int:
+    """Runs with a saved result. Exact, unlike the pushed counters."""
+    return int(psql("SELECT count(*) FROM results WHERE status <> 'QUEUED'"))
+
+
+def psql(query: str) -> str:
+    return subprocess.run(
+        [
+            "podman",
+            "exec",
+            "gemm-queue-db-1",
+            "sh",
+            "-c",
+            f'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "{query}"',
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+
+
+def replicas(service: str) -> int:
+    out = subprocess.run(
+        ["podman", "ps", "--filter", f"name=gemm-queue-{service}-", "--format", "{{.Names}}"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    return len(out.split())
 
 
 def post_histogram(m: dict[str, float]) -> tuple[list[tuple[float, float]], float, float]:
@@ -162,26 +202,27 @@ def bench_api(procs_list: list[int], warmup: float = 8, window: float = 40) -> N
         time.sleep(5)
         load = start_load(procs, jobs=100_000)  # more than the window needs
         time.sleep(warmup)
-        t0, m0 = time.time(), metrics()
+        t0, m0, s0, c0 = time.time(), metrics(), saved_total(), results_cpu()
         time.sleep(window)
-        t1, m1 = time.time(), metrics()
+        t1, m1, s1, c1 = time.time(), metrics(), saved_total(), results_cpu()
         stop_load(load)
         t_stop = time.time()
 
         # Load stopped: only the results consumer is busy now.
         backlog = depths().get("gemm.results", 0)
-        d0, md0 = time.time(), metrics()
+        d0, ds0, dc0 = time.time(), saved_total(), results_cpu()
         d1 = wait_empty("gemm.results")
-        md1 = metrics()
+        time.sleep(6)  # one more push, so the CPU counters cover the whole drain
+        ds1, dc1 = saved_total(), results_cpu()
 
         dt, drain = t1 - t0, d1 - d0
         h0, h1 = post_histogram(m0), post_histogram(m1)
         jobs = total(m1, "api_jobs_submitted_total") - total(m0, "api_jobs_submitted_total")
-        saved = total(m1, "api_results_saved_total") - total(m0, "api_results_saved_total")
-        drained = total(md1, "api_results_saved_total") - total(md0, "api_results_saved_total")
         emit(
             bench="api",
             procs=procs,
+            workers=replicas("worker"),
+            results_consumers=replicas("results"),
             jobs_per_s=round(jobs / dt, 1),
             tasks_per_s=round(5 * jobs / dt, 1),
             post_mean_ms=round(1000 * (h1[2] - h0[2]) / max(h1[1] - h0[1], 1), 1),
@@ -191,15 +232,14 @@ def bench_api(procs_list: list[int], warmup: float = 8, window: float = 40) -> N
             api_cpu_cores=round(
                 (m1["process_cpu_seconds_total"] - m0["process_cpu_seconds_total"]) / dt, 2
             ),
-            results_saved_per_s=round(saved / dt, 1),
+            results_saved_per_s=round((s1 - s0) / dt, 1),
+            results_cpu_cores=round((c1 - c0) / dt, 2),
             peak_tasks_depth=sampler.peak("gemm.tasks", t0, t1),
             results_backlog_at_stop=backlog,
             peak_results_depth=sampler.peak("gemm.results", t0, t_stop),
             drain_s=round(drain, 1),
-            drain_results_per_s=round(drained / drain, 1),
-            drain_api_cpu_cores=round(
-                (md1["process_cpu_seconds_total"] - md0["process_cpu_seconds_total"]) / drain, 2
-            ),
+            drain_results_per_s=round((ds1 - ds0) / drain, 1),
+            drain_results_cpu_cores=round((dc1 - dc0) / drain, 2),
         )
     sampler.running = False
 
@@ -222,6 +262,8 @@ def bench_worker(procs: int = 40, jobs_per_proc: int = 500) -> None:
     sampler.running = False
     emit(
         bench="worker",
+        workers=replicas("worker"),
+        results_consumers=replicas("results"),
         jobs=int(jobs),
         tasks=tasks,
         fill_s=round(fill, 1),

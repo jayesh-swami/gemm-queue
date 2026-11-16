@@ -80,6 +80,23 @@ services:
         condition: service_started
     restart: unless-stopped
 
+  results:
+    # Saves the workers' results into Postgres. Its own service, so it scales apart
+    # from the API (make results RESULTS=N). Same image as the API.
+    image: localhost/gemm-queue-api
+    command: ["uv", "run", "--no-sync", "python", "-m", "gemm_queue.results"]
+    env_file: .env
+    environment:
+      POSTGRES_HOST: db
+      RABBITMQ_HOST: mq
+      PUSHGATEWAY_URL: pushgateway:9091
+    depends_on:
+      api:  # applies the migrations on start
+        condition: service_healthy
+      pushgateway:
+        condition: service_started
+    restart: unless-stopped
+
   worker:
     # built by `make worker`: compose's own build step fails on the unreadable .pgdata
     image: localhost/gemm-queue-worker
@@ -102,7 +119,7 @@ services:
   # --- Monitoring: Prometheus pulls from the API, RabbitMQ, the Pushgateway and the
   # Postgres exporter; Grafana shows it.
 
-  pushgateway:  # the worker and sweeper push their metrics here
+  pushgateway:  # the workers, results consumers and sweeper push their metrics here
     image: docker.io/prom/pushgateway:v1.11.5
     ports:
       - "127.0.0.1:9091:9091"

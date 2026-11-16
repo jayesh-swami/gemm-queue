@@ -108,14 +108,12 @@ def services():
     command.upgrade(alembic_config(), "head")
 
 
-@pytest.fixture(scope="session", autouse=True)
-def worker(services):
-    """The real worker process, with the fake runner."""
-    env = {**os.environ, "WORKER_RUNNER": "fake", "PYTHONUNBUFFERED": "1"}
+def start_process(module: str, ready_line: str, **env: str) -> subprocess.Popen:
+    """Run `python -m module` and wait until it logs ready_line."""
     proc = subprocess.Popen(
-        [sys.executable, "-m", "gemm_queue.worker"],
+        [sys.executable, "-m", module],
         cwd=ROOT,
-        env=env,
+        env={**os.environ, "PYTHONUNBUFFERED": "1", **env},
         stderr=subprocess.PIPE,
         text=True,
     )
@@ -123,18 +121,37 @@ def worker(services):
     lines: list[str] = []
     threading.Thread(target=lambda: lines.extend(proc.stderr), daemon=True).start()
     try:
-        wait_until(lambda: any("worker ready" in line for line in lines), timeout=30)
+        wait_until(lambda: any(ready_line in line for line in lines), timeout=30)
     except AssertionError:
         proc.kill()
-        pytest.exit("worker didn't start:\n" + "".join(lines), returncode=1)
-    yield proc
+        pytest.exit(f"{module} didn't start:\n" + "".join(lines), returncode=1)
+    return proc
+
+
+def stop_process(proc: subprocess.Popen) -> None:
     proc.terminate()
     proc.wait(timeout=10)
 
 
 @pytest.fixture(scope="session", autouse=True)
+def worker(services):
+    """The real worker process, with the fake runner."""
+    proc = start_process("gemm_queue.worker", "worker ready", WORKER_RUNNER="fake")
+    yield proc
+    stop_process(proc)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def results(services):
+    """The real results consumer process."""
+    proc = start_process("gemm_queue.results", "results consumer ready")
+    yield proc
+    stop_process(proc)
+
+
+@pytest.fixture(scope="session", autouse=True)
 def client(services):
-    """The API with its lifespan running, so the results consumer is live."""
+    """The API with its lifespan running (RabbitMQ connection open)."""
     from gemm_queue.api.main import app
 
     with TestClient(app, headers={"X-API-Key": settings.api_key}) as test_client:
@@ -142,7 +159,7 @@ def client(services):
 
 
 @pytest.fixture(autouse=True)
-def clean(client, worker):
+def clean(client, worker, results):
     with dbEngine.begin() as conn:
         conn.execute(text("TRUNCATE jobs, results, sweeper_runs RESTART IDENTITY CASCADE"))
     asyncio.run(purge(*QUEUES))

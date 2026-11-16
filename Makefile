@@ -11,9 +11,11 @@ GPU_ARCH ?= gfx1151
 # make up WORKERS=3 RUNNER=fake: how many workers and their runner (default: WORKER_RUNNER in .env)
 WORKERS ?= 1
 RUNNER ?=
+# make up RESULTS=2: how many results consumers
+RESULTS ?= 1
 
 .DEFAULT_GOAL := help
-.PHONY: help up db mq api worker sweeper monitoring down migrate kernels run-api run-worker run-sweeper run-frontend build-frontend test test-integration lint load-test
+.PHONY: help up db mq api results worker sweeper monitoring down migrate kernels run-api run-results run-worker run-sweeper run-frontend build-frontend test test-integration lint load-test
 
 help: ## Show this list
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | \
@@ -25,11 +27,15 @@ db: ## Start Postgres, wait until healthy
 mq: ## Start RabbitMQ (management UI on localhost:15672)
 	$(COMPOSE) up -d --wait mq
 
-up: api worker sweeper monitoring ## Build and start everything; WORKERS=N RUNNER=fake|hip
+up: api results worker sweeper monitoring ## Build and start everything; WORKERS=N RUNNER=fake|hip RESULTS=N
 
 api: build-frontend ## Build and start the API container (serves the frontend)
 	podman build -f deploy/api.Dockerfile -t gemm-queue-api .
 	$(COMPOSE) up -d api
+
+results: api ## Start RESULTS results consumers (default 1, uses the API image)
+	$(COMPOSE) up -d --scale results=$(RESULTS) results
+	$(COMPOSE) restart pushgateway  # forget metrics of removed replicas; live ones re-push in 5 s
 
 worker: ## Build and start WORKERS workers (default 1); RUNNER=fake|hip overrides .env
 	podman build -f deploy/worker.Dockerfile --build-arg GPU_ARCH=$(GPU_ARCH) -t gemm-queue-worker .
@@ -54,6 +60,9 @@ kernels: ## Build the HIP GEMM binary (run inside the ROCm container)
 
 run-api: ## Run the python api
 	uv run uvicorn gemm_queue.api.main:app --reload
+
+run-results: ## Run the results consumer
+	uv run python -m gemm_queue.results
 
 run-worker: ## Run the worker (WORKER_RUNNER=fake|hip)
 	uv run python -m gemm_queue.worker

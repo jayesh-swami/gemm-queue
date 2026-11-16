@@ -1,6 +1,7 @@
 """Results of one job saved in parallel must still finish the job.
 
-The consumer (prefetch 10) saves several results at once. Without the job-row lock
+Each consumer (prefetch 10) saves several results at once, and with more than one
+replica the results of a job are spread over processes. Without the job-row lock
 (get_for_update), two saves of the same job can each miss the other's commit,
 both see an unfinished run, and the job stays "running" forever.
 """
@@ -8,6 +9,8 @@ both see an unfinished run, and the job stays "running" forever.
 import asyncio
 import random
 
+import pytest
+from conftest import start_process, stop_process
 from helpers import publish_results, wait_until
 from sqlalchemy import func, select
 
@@ -20,7 +23,15 @@ from gemm_queue.common.messages import ResultMessage
 JOBS = 10
 
 
-def test_parallel_results_finish_every_job():
+@pytest.fixture
+def second_consumer():
+    """A second results consumer next to the session one, like RESULTS=2."""
+    proc = start_process("gemm_queue.results", "results consumer ready")
+    yield
+    stop_process(proc)
+
+
+def test_parallel_results_finish_every_job(second_consumer):
     with SessionLocal() as session:
         repo = KernelJobRepository(session)
         jobs = [repo.add(m=8, n=8, k=8, seed=i) for i in range(JOBS)]

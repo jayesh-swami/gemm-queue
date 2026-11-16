@@ -1,10 +1,10 @@
 import pytest
 
-from gemm_queue.api.consumers import result_handler
-from gemm_queue.api.consumers.result_handler import ResultHandler
 from gemm_queue.api.db.repositories import KernelJobRepository
 from gemm_queue.common.enums import Kernel, RunStatus
 from gemm_queue.common.messages import ResultMessage
+from gemm_queue.results import result_handler
+from gemm_queue.results.result_handler import ResultHandler
 
 
 def result_for(job, kernel: Kernel, success: bool = True) -> ResultMessage:

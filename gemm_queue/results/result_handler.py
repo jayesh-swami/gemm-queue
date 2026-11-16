@@ -7,9 +7,9 @@ from pydantic import ValidationError
 from sqlalchemy.orm import Session, sessionmaker
 
 from gemm_queue.api.db.repositories import KernelJobRepository
-from gemm_queue.api.metrics import JOB_SECONDS, RESULTS_SAVED
 from gemm_queue.common.enums import RunStatus
 from gemm_queue.common.messages import ResultMessage
+from gemm_queue.results.metrics import JOB_SECONDS, RESULTS_SAVED
 
 logger = logging.getLogger(__name__)
 

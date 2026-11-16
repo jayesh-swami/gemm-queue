@@ -9,16 +9,11 @@ from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from gemm_queue.api.consumers.result_handler import ResultHandler
-from gemm_queue.api.db.session import SessionLocal
 from gemm_queue.api.dependencies import get_db_session
 from gemm_queue.api.metrics import HTTP_REQUESTS, HTTP_SECONDS
 from gemm_queue.api.routes import jobs
 from gemm_queue.api.settings import settings
 from gemm_queue.common import mq
-
-# Results are small DB writes, so a few can be in flight at once.
-RESULTS_PREFETCH = 10
 
 FRONTEND_DIST = Path(__file__).resolve().parents[1] / "frontend" / "dist"
 
@@ -32,11 +27,6 @@ async def lifespan(app: FastAPI):
     channel = await connection.channel()
     await mq.declare_topology(channel)
     app.state.mq_channel = channel
-
-    # Separate channel for consuming, with its own prefetch.
-    results_channel = await connection.channel()
-    await results_channel.set_qos(prefetch_count=RESULTS_PREFETCH)
-    await mq.consume_results(results_channel, ResultHandler(SessionLocal).handle)
 
     yield
     await connection.close()

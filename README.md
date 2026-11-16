@@ -8,13 +8,13 @@ The kernels are the workload. The project is mostly about the system around them
 block-beta
   columns 8
   space:2 DB[("Postgres")] space SW["Sweeper<br/>every 60 s"]:2 space:2
-  space:8
-  B["Browser"] space API["API<br/>FastAPI + results consumer"] space
+  space:3 RC["Results consumers<br/>1 to N"] space:4
+  B["Browser"] space API["API<br/>FastAPI"] space
   block:MQ:2
     columns 2
     MQL["RabbitMQ"]:2
-    T[["gemm.tasks"]]:2
-    R[["gemm.results"]]:2
+    R[["gemm.results"]] space
+    space T[["gemm.tasks"]]
     TD[["gemm.tasks.dlq"]] RD[["gemm.results.dlq"]]
   end
   space W["GPU workers<br/>1 to N"]
@@ -30,7 +30,8 @@ block-beta
   API -- "5 tasks per job" --> T
   T --> W
   W -- "result, then ack" --> R
-  R --> API
+  R --> RC
+  RC -- "save run" --> DB
   SW -- "stuck runs" --> DB
   SW -- "re-publish" --> T
   PGW --> P
@@ -50,6 +51,7 @@ sequenceDiagram
     participant DB as Postgres
     participant Q as RabbitMQ
     participant W as GPU worker
+    participant C as Results consumer
     B->>A: POST /jobs (M, N, K)
     A->>DB: save job + 5 runs
     A->>Q: 5 tasks on gemm.tasks
@@ -59,8 +61,8 @@ sequenceDiagram
         W->>W: run kernel, check against NumPy
         W->>Q: result on gemm.results
         W->>Q: ack task
-        Q->>A: result (results consumer)
-        A->>DB: save run
+        Q->>C: result
+        C->>DB: save run
     end
     B->>A: poll GET /jobs/:id
     A-->>B: runs with timings
@@ -70,9 +72,10 @@ sequenceDiagram
 
 - **At-least-once delivery.** The worker acks a task only after its result is published, and results are written by task ID, so a redelivered task or a duplicate result changes nothing.
 - **Dead-letter queues on both sides.** A task that keeps failing goes to `gemm.tasks.dlq` after 4 attempts; a malformed result goes straight to `gemm.results.dlq`. Database errors are retried with a pause instead of burning through the delivery limit.
-- **Row lock per job.** Results of one job are saved in parallel, so the job row is locked while a run is written. An integration test reproduces the race without the lock (5 of 5 runs left jobs stuck) and passes with it.
+- **Results consumer as its own service.** It used to run inside the API process. Load tests showed that process was the bottleneck: saving results halved how many jobs it could accept, and `gemm.results` grew while `gemm.tasks` stayed empty. Now it runs separately and scales with `RESULTS=N`. The numbers are in [docs/load-tests.md](docs/load-tests.md).
+- **Row lock per job.** Results of one job are saved in parallel, by one consumer or by several replicas, so the job row is locked while a run is written. An integration test reproduces the race without the lock (5 of 5 runs left jobs stuck) and passes with it, running two consumers.
 - **Sweeper batch job.** Every 60 s it looks for runs with no result after 10 minutes, re-publishes their task, and marks them failed after 3 attempts, so every job ends as done or failed.
-- **Metrics.** The API serves `/metrics` for Prometheus to pull; the worker and sweeper push theirs to a Pushgateway; RabbitMQ and Postgres are scraped through their exporters. Each sweeper pass is also logged in a `sweeper_runs` table.
+- **Metrics.** The API serves `/metrics` for Prometheus to pull; the workers, results consumers and sweeper push theirs to a Pushgateway; RabbitMQ and Postgres are scraped through their exporters. Each sweeper pass is also logged in a `sweeper_runs` table.
 - **Pluggable runner.** `HipRunner` calls the compiled HIP binary; `FakeRunner` returns the NumPy product, so the whole pipeline runs and is tested without a GPU.
 
 ## Results
@@ -95,17 +98,18 @@ Needs Podman with Compose, [uv](https://docs.astral.sh/uv/), Node and, for the G
 
 ```sh
 cp .env.example .env     # set the passwords and API_KEY
-make up                  # builds both images, starts Postgres, RabbitMQ, API, worker, sweeper and monitoring
+make up                  # builds both images, starts Postgres, RabbitMQ, API, results consumer, worker, sweeper and monitoring
 make load-test           # optional: submit 20 jobs to watch
 ```
 
 Then open http://localhost:8000 for the app and http://localhost:3000 for the Grafana dashboard. For a GPU other than gfx1151, run `make up GPU_ARCH=gfx1100` (or whatever `rocminfo` reports).
 
-The number of workers and their runner can be set when starting:
+The number of workers, their runner and the number of results consumers can be set when starting:
 
 ```sh
-make up WORKERS=4 RUNNER=fake   # 4 workers that return the NumPy product instead of using the GPU
-make worker WORKERS=1           # scale back to one worker, runner from WORKER_RUNNER in .env
+make up WORKERS=4 RUNNER=fake RESULTS=2   # 4 fake workers (NumPy instead of the GPU), 2 results consumers
+make worker WORKERS=1                     # scale only the workers, runner from WORKER_RUNNER in .env
+make results RESULTS=1                    # scale only the results consumers
 ```
 
 Without a GPU, run the worker on the host with the fake runner:
@@ -113,7 +117,8 @@ Without a GPU, run the worker on the host with the fake runner:
 ```sh
 make db mq build-frontend migrate
 make run-api                         # in one terminal
-WORKER_RUNNER=fake make run-worker   # in another
+make run-results                     # in another
+WORKER_RUNNER=fake make run-worker   # in a third
 ```
 
 ## Tests
@@ -128,10 +133,13 @@ make lint               # ruff, oxlint and pre-commit checks
 
 ```
 gemm_queue/common/    shared settings, enums, messages, RabbitMQ helpers
-gemm_queue/api/       FastAPI routes, results consumer, database, migrations
+gemm_queue/api/       FastAPI routes, database, migrations
+gemm_queue/results/   results consumer (its own service)
 gemm_queue/worker/    task handler, runners, HIP kernel source
 gemm_queue/batch/     sweeper (batch job)
 gemm_queue/frontend/  React + Vite page
 deploy/               docker-compose.yml, the two Dockerfiles, Prometheus and Grafana config
+scripts/              load generator and benchmark
+docs/                 load test results
 tests/                unit/ and integration/
 ```
