@@ -228,6 +228,7 @@ def bench_api(procs_list: list[int], warmup: float = 8, window: float = 40) -> N
     sampler = Sampler()
     sampler.start()
     for procs in procs_list:
+        wait_empty("gemm.tasks")  # a run can leave tasks behind when the API outpaces the workers
         wait_empty("gemm.results")
         time.sleep(5)
         load = start_load(procs, jobs=100_000)  # more than the window needs
@@ -272,6 +273,7 @@ def bench_api(procs_list: list[int], warmup: float = 8, window: float = 40) -> N
 
 
 def bench_worker(procs: int = 40, jobs_per_proc: int = 500) -> None:
+    wait_empty("gemm.tasks")  # only this run's tasks, or the drain rate is wrong
     wait_empty("gemm.results")
     compose("stop", "worker")
     t_fill, m0 = time.time(), metrics()
